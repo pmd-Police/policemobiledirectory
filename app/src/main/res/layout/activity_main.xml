@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- Content of this file appears to be unused as MainActivity uses Jetpack Compose -->
+        <!-- The RecyclerView and other EditTexts/Buttons were removed to resolve Lint errors -->
+        <!-- You can add a placeholder TextView here if desired -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="This layout (activity_main.xml) is likely unused. MainActivity uses Jetpack Compose."
+            android:gravity="center"
+            android:padding="16dp" />
+
+    </LinearLayout>
+</ScrollView>

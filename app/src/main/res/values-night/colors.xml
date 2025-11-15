@@ -1,0 +1,10 @@
+<resources>
+    <!-- Dark theme colors -->
+    <color name="md_theme_dark_primary">#90CAF9</color>
+    <color name="md_theme_dark_onPrimary">#0D47A1</color>
+    <color name="md_theme_dark_primaryContainer">#1E88E5</color>
+    <color name="md_theme_dark_onPrimaryContainer">#E3F2FD</color>
+
+    <color name="md_theme_dark_secondary">#64B5F6</color>
+    <color name="md_theme_dark_onSecondary">#0D47A1</color>
+</resources>

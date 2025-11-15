@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "603972083927",
+    "project_id": "pmd-police-mobile-directory",
+    "storage_bucket": "pmd-police-mobile-directory.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:603972083927:android:2b6c54fa29de5b0af29092",
+        "android_client_info": {
+          "package_name": "com.example.policemobiledirectory"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "603972083927-0429fm9f02n39d1f2dhvsig9ujgi9vo5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.policemobiledirectory",
+            "certificate_hash": "6a0d5add2b6f79d542754fbae05bea35990c2907"
+          }
+        },
+        {
+          "client_id": "603972083927-rog2v7ucndnu1399fugu3pemrjchov7t.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZjrm7r4h7EdP4WwTzw9Rz42k_nKZRgj8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "603972083927-rog2v7ucndnu1399fugu3pemrjchov7t.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

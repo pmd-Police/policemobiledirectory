@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <cache-path name="shared_files" path="." />
+    <!-- Allows sharing cache files like temp camera images, uCrop outputs -->
+
+    <external-cache-path name="cached_images" path="." />
+    <!-- Allows sharing images stored in externalCacheDir (optional but useful) -->
+
+    <external-files-path name="images" path="Pictures" />
+    <!-- Allows accessing files in /Android/data/<package>/files/Pictures -->
+
+</paths>
