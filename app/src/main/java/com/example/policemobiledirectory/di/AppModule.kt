@@ -71,9 +71,8 @@ object AppModule {
     @Provides
     @Singleton
     fun provideImageRepository(
-        @ApplicationContext context: Context,
-        firestore: FirebaseFirestore
-    ): ImageRepository = ImageRepository(context, firestore)
+        @ApplicationContext context: Context
+    ): ImageRepository = ImageRepository(context)
 
     @Provides
     @Singleton

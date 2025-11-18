@@ -68,7 +68,7 @@ fun EmployeeCardAdmin(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // 🔹 Profile image
@@ -88,8 +88,8 @@ fun EmployeeCardAdmin(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(end = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                        .padding(end = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -140,7 +140,7 @@ fun EmployeeCardAdmin(
                         color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
                     )
 
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(1.dp))
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,

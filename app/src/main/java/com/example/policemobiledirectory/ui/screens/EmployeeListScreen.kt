@@ -62,7 +62,13 @@ fun EmployeeListScreen(
     // Notification counts
     val userNotifications by viewModel.userNotifications.collectAsStateWithLifecycle()
     val adminNotifications by viewModel.adminNotifications.collectAsStateWithLifecycle()
-    val notificationCount = if (isAdmin) adminNotifications.size else userNotifications.size
+    val userNotificationsSeenAt by viewModel.userNotificationsLastSeen.collectAsStateWithLifecycle()
+    val adminNotificationsSeenAt by viewModel.adminNotificationsLastSeen.collectAsStateWithLifecycle()
+    val notificationCount = if (isAdmin) {
+        adminNotifications.count { (it.timestamp ?: 0L) > adminNotificationsSeenAt }
+    } else {
+        userNotifications.count { (it.timestamp ?: 0L) > userNotificationsSeenAt }
+    }
 
     LaunchedEffect(Unit) { viewModel.checkIfAdmin() }
 
@@ -75,15 +81,10 @@ fun EmployeeListScreen(
                         Text("PMD Home")
                         Spacer(Modifier.width(6.dp))
                         Box {
-                            IconButton(
-                                onClick = {
-                                    if (isAdmin) navController.navigate(Routes.PENDING_APPROVALS)
-                                    else navController.navigate(Routes.NOTIFICATIONS)
-                                }
-                            ) {
+                            IconButton(onClick = { navController.navigate(Routes.NOTIFICATIONS) }) {
                                 Icon(
                                     imageVector = Icons.Default.Notifications,
-                                    contentDescription = if (isAdmin) "Pending approvals" else "Notifications"
+                                    contentDescription = "Notifications"
                                 )
                             }
                             // Notification badge

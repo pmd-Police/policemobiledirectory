@@ -21,12 +21,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
+import com.example.policemobiledirectory.R
 import com.example.policemobiledirectory.viewmodel.EmployeeViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,11 +89,19 @@ fun UsefulLinksScreen(
                                 },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            // ✅ Load app icon or fallback safely for null/empty URLs
+                            val iconModel = link.iconUrl?.takeIf { it.isNotBlank() }
+                                ?: link.playStoreUrl?.takeIf { it.isNotBlank() }?.let {
+                                    "https://www.google.com/s2/favicons?sz=128&domain_url=$it"
+                                }
+                                ?: "https://cdn-icons-png.flaticon.com/512/732/732225.png"
+
                             val painter = rememberAsyncImagePainter(
-                                model = link.iconUrl?.ifEmpty {
-                                    "https://cdn-icons-png.flaticon.com/512/732/732225.png"
-                                } ?: "https://cdn-icons-png.flaticon.com/512/732/732225.png"
+                                model = ImageRequest.Builder(context)
+                                    .data(iconModel)
+                                    .crossfade(true)
+                                    .build(),
+                                placeholder = painterResource(id = R.drawable.app_logo),
+                                error = painterResource(id = R.drawable.app_logo)
                             )
 
                             Image(

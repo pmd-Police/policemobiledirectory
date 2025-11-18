@@ -88,8 +88,12 @@ open class EmployeeViewModel @Inject constructor(
     val searchFilter: StateFlow<SearchFilter> = _searchFilter.asStateFlow()
     private val _selectedDistrict = MutableStateFlow("All")
     private val _selectedStation = MutableStateFlow("All")
-    private val _adminNotifications = MutableStateFlow<List<Map<String, Any>>>(emptyList())
+    private val _adminNotifications = MutableStateFlow<List<AppNotification>>(emptyList())
     val adminNotifications = _adminNotifications.asStateFlow()
+    private val _userNotificationsLastSeen = MutableStateFlow(0L)
+    val userNotificationsLastSeen = _userNotificationsLastSeen.asStateFlow()
+    private val _adminNotificationsLastSeen = MutableStateFlow(0L)
+    val adminNotificationsLastSeen = _adminNotificationsLastSeen.asStateFlow()
     private val _userNotifications = MutableStateFlow<List<AppNotification>>(emptyList())
     val userNotifications: StateFlow<List<AppNotification>> = _userNotifications.asStateFlow()
 
@@ -120,6 +124,7 @@ open class EmployeeViewModel @Inject constructor(
 
     private var userNotificationsListener: ListenerRegistration? = null
     private var userNotificationsListenerKgid: String? = null
+    private var adminNotificationsListener: ListenerRegistration? = null
 
 
     init {
@@ -231,7 +236,20 @@ open class EmployeeViewModel @Inject constructor(
 
         viewModelScope.launch {
             currentUser.collectLatest { user ->
+                updateAdminNotificationListener(user?.isAdmin == true)
                 updateUserNotificationListener(user)
+            }
+        }
+
+        viewModelScope.launch {
+            sessionManager.userNotificationsSeenAt.collect { lastSeen ->
+                _userNotificationsLastSeen.value = lastSeen
+            }
+        }
+
+        viewModelScope.launch {
+            sessionManager.adminNotificationsSeenAt.collect { lastSeen ->
+                _adminNotificationsLastSeen.value = lastSeen
             }
         }
     }
@@ -312,18 +330,45 @@ open class EmployeeViewModel @Inject constructor(
 
     //show real-time admin alert
 
-    fun fetchAdminNotifications() {
-        firestore.collection("admin_notifications")
-            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+    private fun updateAdminNotificationListener(isAdmin: Boolean) {
+        if (!isAdmin) {
+            adminNotificationsListener?.remove()
+            adminNotificationsListener = null
+            _adminNotifications.value = emptyList()
+            return
+        }
+
+        if (adminNotificationsListener != null) return
+
+        adminNotificationsListener = firestore.collection("admin_notifications")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) {
                     Log.e("AdminNotifications", "❌ Failed to fetch: ${e.message}")
                     return@addSnapshotListener
                 }
-                if (snapshot != null) {
-                    _adminNotifications.value = snapshot.documents.mapNotNull { it.data }
+                val docs = snapshot?.documents ?: return@addSnapshotListener
+                val notifications = docs.mapNotNull { doc ->
+                    doc.data?.toAppNotification(doc.id)
+                }
+                _adminNotifications.value = notifications
+            }
+    }
+
+    fun markNotificationsRead(isAdminUser: Boolean, notifications: List<AppNotification>) {
+        val latestTimestamp = notifications.mapNotNull { it.timestamp }.maxOrNull()
+            ?: System.currentTimeMillis()
+        viewModelScope.launch {
+            if (isAdminUser) {
+                if (latestTimestamp > _adminNotificationsLastSeen.value) {
+                    sessionManager.setAdminNotificationsSeen(latestTimestamp)
+                }
+            } else {
+                if (latestTimestamp > _userNotificationsLastSeen.value) {
+                    sessionManager.setUserNotificationsSeen(latestTimestamp)
                 }
             }
+        }
     }
 
     private fun updateUserNotificationListener(user: Employee?) {
@@ -652,18 +697,20 @@ open class EmployeeViewModel @Inject constructor(
     // EMPLOYEE CRUD + HELPERS
     // =========================================================
     fun refreshEmployees() = viewModelScope.launch {
+        _employeeStatus.value = OperationStatus.Loading
         try {
             employeeRepo.refreshEmployees()
-            employeeRepo.getEmployees().collectLatest { result ->
-                when (result) {
-                    is RepoResult.Loading -> _employeeStatus.value = OperationStatus.Loading
-                    is RepoResult.Success -> {
-                        val list = result.data ?: emptyList()
-                        _employees.value = list
-                        _employeeStatus.value = OperationStatus.Success(list)
-                    }
-                    is RepoResult.Error -> _employeeStatus.value = OperationStatus.Error(result.message ?: "Failed to load employees")
+            val result = employeeRepo.getEmployees()
+                .filterNot { it is RepoResult.Loading }
+                .firstOrNull()
+            when (result) {
+                is RepoResult.Success -> {
+                    val list = result.data ?: emptyList()
+                    _employees.value = list
+                    _employeeStatus.value = OperationStatus.Success(list)
                 }
+                is RepoResult.Error -> _employeeStatus.value = OperationStatus.Error(result.message ?: "Failed to load employees")
+                else -> _employeeStatus.value = OperationStatus.Error("Failed to load employees")
             }
         } catch (e: Exception) {
             _employeeStatus.value = OperationStatus.Error("Refresh failed: ${e.message}")
@@ -1141,5 +1188,7 @@ open class EmployeeViewModel @Inject constructor(
         super.onCleared()
         userNotificationsListener?.remove()
         userNotificationsListener = null
+        adminNotificationsListener?.remove()
+        adminNotificationsListener = null
     }
 }

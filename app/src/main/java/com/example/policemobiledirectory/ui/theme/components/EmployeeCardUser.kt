@@ -63,7 +63,7 @@ fun EmployeeCardUser(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AsyncImage(
@@ -79,8 +79,10 @@ fun EmployeeCardUser(
                 Spacer(Modifier.width(10.dp))
 
                 Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Text(
                         text = employee.name,
@@ -107,7 +109,9 @@ fun EmployeeCardUser(
                     )
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {

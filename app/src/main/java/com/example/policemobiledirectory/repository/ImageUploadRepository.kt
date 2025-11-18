@@ -19,7 +19,7 @@ object ImageUploadRepository {
 
     // 🔗 Replace with your deployed Apps Script Web App URL
     private const val UPLOAD_URL =
-        "https://script.google.com/macros/s/AKfycbzYtkFaye48h088E1iwRwnhg-XdO7PxnXlKDKWq0Mju8PzROAiXwtkktf7Zw_td90bI/exec?action=uploadImage"
+        "https://script.google.com/macros/s/AKfycbw3BybPar7IpUPm10nEDlT1UEbYMTiMsDvnxQyv9l3sf916Mk9DuDZcc4u_h8DV7vSI9w/exec?action=uploadImage"
 
     suspend fun uploadImageToDrive(
         context: Context,

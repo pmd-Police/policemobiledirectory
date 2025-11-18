@@ -286,15 +286,15 @@ fun LoginScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.clickable { onRegisterNewUser(null) }
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(32.dp))
                 
                 // Developer Information
                 Text(
                     text = "Developed By Ravikumar J, AHC, DAR Chikkaballapura",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
                 )
             }
         }

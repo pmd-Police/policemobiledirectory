@@ -3,9 +3,9 @@
 
 /** ---------- CONFIG - EDIT THESE BEFORE DEPLOY ---------- **/
 
-const SHEET_ID = "16CjFznsde8GV0LKtilaD8-CaUYC3FrYzcmMDfy1ww3Q";
+const SHEET_ID = "1g0ex1MgMc6mf9bJUG511M-v6FNq704ocimK3I4j9NzE";
 const SHEET_NAME = "Emp Profiles";
-const DRIVE_FOLDER_ID = "1sR4NPomjADI5lmum-Bx6MAxvmTk1ydxV";
+const DRIVE_FOLDER_ID = "1uzEl9e2uZIarXZhBPb3zlOXJAioeTNFs"; 
 const FIREBASE_PROJECT_ID = "pmd-police-mobile-directory";
 const FIREBASE_API_KEY = "AIzaSyB_d5ueTul9vKeNw3EtCmbF9w1BVkrAQ";
 
@@ -22,6 +22,23 @@ function getSheet() {
   const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) throw new Error("Sheet not found: " + SHEET_NAME);
   return sheet;
+}
+
+/**
+ * Helper: safe raw body getter (works for large payloads)
+ */
+function getRawBody(e) {
+  if (!e) return "";
+  try {
+    if (e.postData && typeof e.postData.getDataAsString === "function") {
+      const s = e.postData.getDataAsString();
+      if (s != null) return s;
+    }
+  } catch (err) {
+    // fallthrough
+  }
+  if (e.postData && e.postData.contents) return e.postData.contents;
+  return "";
 }
 
 function doGet(e) {
@@ -46,18 +63,39 @@ function doPost(e) {
 
     const action = e.parameter.action;
     Logger.log("doPost called action=" + action);
-    
-    if (action === "addEmployee") return addEmployee(JSON.parse(e.postData ? e.postData.contents : "{}"));
-    if (action === "updateEmployee") return updateEmployee(JSON.parse(e.postData ? e.postData.contents : "{}"));
-    if (action === "deleteEmployee") return deleteEmployee(JSON.parse(e.postData ? e.postData.contents : "{}"));
+
+    // Always read raw body using getDataAsString()
+    let body = "";
+    if (e.postData) {
+      try {
+        body = e.postData.getDataAsString();
+      } catch (err) {
+        Logger.log("getDataAsString ERROR: " + err);
+      }
+    }
+
+    let payload = {};
+    if (body && body.trim().startsWith("{")) {
+      try {
+        payload = JSON.parse(body);
+      } catch (err) {
+        Logger.log("JSON Parse Error: " + err);
+      }
+    }
+
+    if (action === "addEmployee") return addEmployee(payload);
+    if (action === "updateEmployee") return updateEmployee(payload);
+    if (action === "deleteEmployee") return deleteEmployee(payload);
     if (action === "uploadImage") return uploadProfileImage(e);
-    
+
     return jsonResponse({ error: "Unknown POST action" }, 400);
+
   } catch (err) {
     Logger.log("doPost ERROR: " + err.toString());
     return jsonResponse({ error: err.toString() }, 500);
   }
 }
+
 
 function getEmployees() {
   try {
@@ -163,7 +201,7 @@ function deleteEmployee(payload) {
  * 4. Extracts kgid from filename
  */
 function uploadProfileImage(e) {
-  // ✅ ALWAYS initialize debug array first
+  // ALWAYS initialize debug array first
   const debug = [];
   debug.push("=== START uploadProfileImage ===");
   debug.push("e exists: " + (e != null));
@@ -178,46 +216,56 @@ function uploadProfileImage(e) {
     debug.push("e.parameter.action: " + (e.parameter ? e.parameter.action : "none"));
     debug.push("e.keys: " + Object.keys(e).join(", "));
     
-    if (!e.postData) {
-      debug.push("ERROR: No postData");
+    // Use rawBody (works even for large JSON)
+    const rawBody = (e && e._rawBody) ? e._rawBody : (e.postData && e.postData.contents ? e.postData.contents : "");
+    if (rawBody == null) rawBody = "";
+    
+    if (!e.postData && !rawBody) {
+      debug.push("ERROR: No postData and no rawBody");
       return jsonResponse({ success: false, error: "No POST data received", debug: debug }, 400);
     }
     
-    const ct = e.postData.type || "";
+    // Content-Type extraction (try postData.type or getContentType())
+    let ct = "";
+    try {
+      if (e.postData && e.postData.type) ct = e.postData.type;
+      else if (e.postData && typeof e.postData.getContentType === "function") ct = e.postData.getContentType();
+    } catch (err) {
+      ct = "";
+    }
+    ct = (ct || "").toString();
     debug.push("Content-Type: " + ct);
     
-    const hasContents = !!(e.postData.contents);
-    const contentsLen = hasContents ? e.postData.contents.length : 0;
-    const hasBytes = !!(e.postData.bytes);
+    const hasContents = !!(rawBody && rawBody.length > 0);
+    const contentsLen = hasContents ? rawBody.length : 0;
+    const hasBytes = !!(e.postData && e.postData.bytes && e.postData.bytes.length > 0);
     const bytesLen = hasBytes ? e.postData.bytes.length : 0;
     
-    debug.push("postData.contents: " + (hasContents ? "exists (" + contentsLen + " chars)" : "none"));
+    debug.push("postData.contents/rawBody: " + (hasContents ? "exists (" + contentsLen + " chars)" : "none"));
     debug.push("postData.bytes: " + (hasBytes ? "exists (" + bytesLen + " bytes)" : "none"));
-    debug.push("postData.keys: " + Object.keys(e.postData).join(", "));
+    try { debug.push("postData.keys: " + Object.keys(e.postData).join(", ")); } catch (err) { debug.push("postData.keys: none"); }
     
-    // Log first 300 chars of contents if available
+    // Log first 300 chars of raw body if available
     if (hasContents && contentsLen > 0) {
-      debug.push("First 300 chars: " + e.postData.contents.substring(0, 300));
+      debug.push("First 300 chars: " + rawBody.substring(0, Math.min(300, contentsLen)));
     }
     
     const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
     let blob = null;
     let kgid = null;
     
-    // ✅ METHOD 1: Use e.postData.bytes directly (if Apps Script auto-parsed multipart)
+    // METHOD 1: Use e.postData.bytes directly (if Apps Script auto-parsed multipart)
     if (hasBytes && bytesLen > 0) {
       debug.push("--- METHOD 1: Trying postData.bytes ---");
-      
       try {
         let fileName = "upload.jpg";
         
-        // Try to extract filename and kgid from contents
+        // Try to extract filename and kgid from rawBody (if present)
         if (hasContents) {
-          const fnMatch = e.postData.contents.match(/filename="([^"]+)"/);
+          const fnMatch = rawBody.match(/filename="([^"]+)"/);
           if (fnMatch) {
             fileName = fnMatch[1];
             debug.push("Extracted filename: " + fileName);
-            
             const kgidMatch = fileName.match(/^(\d+)\.jpg$/);
             if (kgidMatch) {
               kgid = kgidMatch[1];
@@ -248,87 +296,54 @@ function uploadProfileImage(e) {
       debug.push("METHOD 1 SKIPPED: No postData.bytes");
     }
     
-    // ✅ METHOD 2: Parse JSON base64 (NEW - simpler and more reliable)
-    // Check if it's JSON by Content-Type OR by checking if contents starts with {
-    const ctIsJson = ct.indexOf("application/json") >= 0;
-    const contentsIsJson = hasContents && e.postData.contents.trim().startsWith("{");
-    const isJson = ctIsJson || contentsIsJson;
-    
-    debug.push("METHOD 2 CHECK: ctIsJson=" + ctIsJson + ", contentsIsJson=" + contentsIsJson + ", isJson=" + isJson + ", blob=" + (blob != null) + ", hasContents=" + hasContents);
-    
-    if (!blob && hasContents && isJson) {
-      debug.push("--- METHOD 2: Parsing JSON base64 ---");
-      debug.push("Content-Type check: " + (ct.indexOf("application/json") >= 0));
-      debug.push("Starts with { check: " + (e.postData.contents.trim().startsWith("{")));
-      
+    // METHOD 2 (robust): Try parsing JSON whenever rawBody exists (no reliance on Content-Type)
+    if (!blob && hasContents) {
+      debug.push("--- METHOD 2 (ROBUST): Attempt JSON.parse regardless of Content-Type ---");
       try {
-        const jsonData = JSON.parse(e.postData.contents);
-        debug.push("✅ JSON parsed successfully");
-        debug.push("JSON keys: " + Object.keys(jsonData).join(", "));
-        
-        if (jsonData.image) {
-          debug.push("✅ Found 'image' field in JSON");
-          
-          // Extract base64 string
-          let base64 = jsonData.image;
-          if (base64.indexOf(",") >= 0) {
-            base64 = base64.split(",")[1];
-            debug.push("Extracted base64 after comma");
-          }
-          
-          debug.push("Base64 length: " + base64.length);
-          
-          // Decode base64
-          const bytes = Utilities.base64Decode(base64);
-          debug.push("Decoded to " + bytes.length + " bytes");
-          
-          // Validate JPEG signature
-          if (bytes.length >= 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
-            debug.push("✅ Valid JPEG signature (FF D8 FF)");
+        const trimmed = rawBody.trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+          const jsonData = JSON.parse(trimmed);
+          debug.push("✅ JSON parsed (robust) — keys: " + Object.keys(jsonData).join(", "));
+          if (jsonData.image) {
+            // extract base64 (strip data:... prefix if present)
+            let base64 = jsonData.image;
+            if (typeof base64 === "string" && base64.indexOf(",") >= 0) {
+              base64 = base64.split(",")[1];
+              debug.push("Extracted base64 after comma");
+            }
+            const bytes = Utilities.base64Decode(base64);
+            debug.push("Decoded to " + bytes.length + " bytes (robust)");
+            // filename handling
+            const fileName = (jsonData.filename && String(jsonData.filename)) || ("upload_" + new Date().getTime() + ".jpg");
+            const kgidFromName = (fileName.match(/^(\d+)\.jpg$/) || [])[1] || null;
+            if (kgidFromName) debug.push("Extracted kgid from filename: " + kgidFromName);
+            // blob creation
+            blob = Utilities.newBlob(bytes, "image/jpeg", fileName);
+            debug.push("✅ METHOD 2 (ROBUST) SUCCESS: Blob created (" + blob.getBytes().length + " bytes)");
+            return handleBlobSave(e, blob, kgidFromName, debug);
           } else {
-            debug.push("WARNING: Doesn't look like JPEG");
+            debug.push("METHOD 2 (ROBUST): JSON parsed but no 'image' field");
           }
-          
-          // Get filename and extract kgid
-          let fileName = jsonData.filename || "upload.jpg";
-          debug.push("Filename: " + fileName);
-          
-          const kgidMatch = fileName.match(/^(\d+)\.jpg$/);
-          if (kgidMatch) {
-            kgid = kgidMatch[1];
-            debug.push("Extracted kgid: " + kgid);
-          }
-          
-          // Create blob
-          blob = Utilities.newBlob(bytes, "image/jpeg", fileName);
-          const blobSize = blob.getBytes().length;
-          debug.push("✅ METHOD 2 SUCCESS: Blob created (" + blobSize + " bytes)");
-          
-          return handleBlobSave(e, blob, kgid, debug);
         } else {
-          debug.push("ERROR: No 'image' field in JSON");
-          debug.push("JSON keys found: " + Object.keys(jsonData).join(", "));
-          debug.push("JSON sample: " + JSON.stringify(jsonData).substring(0, 200));
+          debug.push("METHOD 2 (ROBUST): rawBody not JSON-like (startsWith check failed)");
         }
       } catch (err) {
-        debug.push("METHOD 2 ERROR: " + err.toString());
-        debug.push("Error stack: " + (err.stack || "no stack"));
+        debug.push("METHOD 2 (ROBUST) ERROR: " + err.toString());
       }
-    } else if (!blob && hasContents) {
-      debug.push("METHOD 2 SKIPPED: isJson=" + isJson + ", Content-Type: " + ct);
-      debug.push("Contents starts with: " + e.postData.contents.substring(0, 50));
+    } else {
+      debug.push("METHOD 2 SKIPPED: No rawBody or already have blob");
     }
     
-    // ✅ METHOD 3: Parse multipart/form-data manually (fallback)
-    if (!blob && hasContents && ct.indexOf("multipart/form-data") >= 0) {
+    // METHOD 3: Parse multipart/form-data manually (fallback)
+    if (!blob && hasContents && (ct + "").toLowerCase().indexOf("multipart/form-data") >= 0) {
       debug.push("--- METHOD 3: Parsing multipart/form-data ---");
       
       try {
-        const raw = e.postData.contents;
+        const raw = rawBody;
         debug.push("Raw content length: " + raw.length);
         
         // Extract boundary
-        const bMatch = ct.match(/boundary=([^;\s]+)/);
+        const bMatch = (ct || "").match(/boundary=([^;\s]+)/);
         let boundary = bMatch ? bMatch[1].trim() : null;
         
         if (!boundary) {
@@ -466,7 +481,7 @@ function uploadProfileImage(e) {
       }
     } else {
       if (!hasContents) {
-        debug.push("METHOD 3 SKIPPED: No postData.contents");
+        debug.push("METHOD 3 SKIPPED: No rawBody");
       } else {
         debug.push("METHOD 3 SKIPPED: Not multipart (Content-Type: " + ct + ")");
       }
@@ -555,7 +570,7 @@ function updateSheetFieldByKgid(kgid, field, value) {
         return true;
       }
     }
-    
+  
     return false;
   } catch (err) {
     Logger.log("updateSheetFieldByKgid ERROR: " + err.toString());
@@ -567,7 +582,7 @@ function updateFirebaseProfileImage(kgid, url) {
   try {
     if (!FIREBASE_PROJECT_ID || !FIREBASE_API_KEY) return null;
     
-    const docPath = "projects/" + FIREBASE_PROJECT_ID + "/databases/(default)/documents/officers/" + encodeURIComponent(kgid);
+    const docPath = "projects/" + FIREBASE_PROJECT_ID + "/databases/(default)/documents/employees/" + encodeURIComponent(kgid);
     const firestoreUrl = "https://firestore.googleapis.com/v1/" + docPath + "?updateMask.fieldPaths=photoUrl&key=" + FIREBASE_API_KEY;
     
     const payload = {
@@ -589,4 +604,3 @@ function updateFirebaseProfileImage(kgid, url) {
     return null;
   }
 }
-

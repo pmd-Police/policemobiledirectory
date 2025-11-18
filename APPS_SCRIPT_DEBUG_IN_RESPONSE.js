@@ -1,22 +1,22 @@
-/********** DEBUG VERSION - Returns Debug Info in Response **********/
-/** This version includes debug info in the JSON response so we can see it in Android logs **/
+/********** FINAL APPS SCRIPT (copy & paste) **********/
 
 /** ---------- CONFIG - EDIT THESE BEFORE DEPLOY ---------- **/
-
 const SHEET_ID = "16CjFznsde8GV0LKtilaD8-CaUYC3FrYzcmMDfy1ww3Q";
-const SHEET_NAME = "Emp Profiles";
+const SHEET_NAME = "Emp Profiles";                 // exact sheet tab name
 const DRIVE_FOLDER_ID = "1sR4NPomjADI5lmum-Bx6MAxvmTk1ydxV";
 const FIREBASE_PROJECT_ID = "pmd-police-mobile-directory";
-const FIREBASE_API_KEY = "AIzaSyB_d5ueTul9vKeNw3EtCmbF9w1BVkrAQ";
-
+const FIREBASE_API_KEY = "AIzaSyB_d5ueTul9vKeNw3pmEtCmbF9w1BVkrAQ";
+const SECRET_TOKEN = "PUT_A_RANDOM_SECRET_HERE";   // MUST set and use from app (e.g. ?token=...)
 /** ------------------------------------------------------ **/
 
+/** Utility: safe json response **/
 function jsonResponse(obj, status) {
   const output = ContentService.createTextOutput(JSON.stringify(obj));
   output.setMimeType(ContentService.MimeType.JSON);
   return output;
 }
 
+/** Utility: get sheet safely **/
 function getSheet() {
   const ss = SpreadsheetApp.openById(SHEET_ID);
   const sheet = ss.getSheetByName(SHEET_NAME);
@@ -24,6 +24,13 @@ function getSheet() {
   return sheet;
 }
 
+/** Guard for editor runs where `e` is undefined **/
+function requireParams(e) {
+  if (!e) throw new Error("No event parameter (do not run doGet/doPost from editor). Use HTTP requests.");
+  return true;
+}
+
+/** ----------------- Public endpoints ----------------- **/
 function doGet(e) {
   try {
     if (!e || !e.parameter) {
@@ -41,17 +48,24 @@ function doGet(e) {
 function doPost(e) {
   try {
     if (!e || !e.parameter) {
-      return jsonResponse({ error: "No parameters. Use ?action=..." }, 400);
+      return jsonResponse({ error: "No parameters. Use ?action=... and include token" }, 400);
+    }
+
+    // Optional: verify secret token to avoid public abuse
+    const providedToken = e.parameter.token || (e.queryString && parseQueryString(e.queryString).token);
+    if (SECRET_TOKEN && providedToken !== SECRET_TOKEN) {
+      Logger.log("Invalid or missing token. Provided: " + providedToken);
+      return jsonResponse({ error: "Invalid or missing token" }, 401);
     }
 
     const action = e.parameter.action;
     Logger.log("doPost called action=" + action);
-    
+
     if (action === "addEmployee") return addEmployee(JSON.parse(e.postData ? e.postData.contents : "{}"));
     if (action === "updateEmployee") return updateEmployee(JSON.parse(e.postData ? e.postData.contents : "{}"));
     if (action === "deleteEmployee") return deleteEmployee(JSON.parse(e.postData ? e.postData.contents : "{}"));
     if (action === "uploadImage") return uploadProfileImage(e);
-    
+
     return jsonResponse({ error: "Unknown POST action" }, 400);
   } catch (err) {
     Logger.log("doPost ERROR: " + err.toString());
@@ -59,15 +73,14 @@ function doPost(e) {
   }
 }
 
+/** ----------------- CRUD helpers ----------------- **/
 function getEmployees() {
   try {
     const sheet = getSheet();
     const rows = sheet.getDataRange().getValues();
     if (rows.length <= 1) return jsonResponse([]);
-    
     const headers = rows[0].map(h => String(h).trim());
     const out = [];
-    
     for (let r = 1; r < rows.length; r++) {
       const row = rows[r];
       const obj = {};
@@ -76,7 +89,6 @@ function getEmployees() {
       }
       out.push(obj);
     }
-    
     return jsonResponse(out);
   } catch (err) {
     Logger.log("getEmployees ERROR: " + err.toString());
@@ -100,14 +112,12 @@ function addEmployee(payload) {
 function updateEmployee(payload) {
   try {
     if (!payload.kgid) return jsonResponse({ error: "kgid required" }, 400);
-    
     const sheet = getSheet();
     const rows = sheet.getDataRange().getValues();
     const headers = rows[0].map(h => String(h).trim());
     const kgidIdx = headers.indexOf("kgid");
-    
     if (kgidIdx < 0) return jsonResponse({ error: "kgid column missing" }, 500);
-    
+
     let found = false;
     for (let r = 1; r < rows.length; r++) {
       if (String(rows[r][kgidIdx]) === String(payload.kgid)) {
@@ -120,7 +130,6 @@ function updateEmployee(payload) {
         break;
       }
     }
-    
     return jsonResponse({ success: found });
   } catch (err) {
     Logger.log("updateEmployee ERROR: " + err.toString());
@@ -131,21 +140,18 @@ function updateEmployee(payload) {
 function deleteEmployee(payload) {
   try {
     if (!payload.kgid) return jsonResponse({ error: "kgid required" }, 400);
-    
     const sheet = getSheet();
     const rows = sheet.getDataRange().getValues();
     const headers = rows[0].map(h => String(h).trim());
     const kgidIdx = headers.indexOf("kgid");
-    
     if (kgidIdx < 0) return jsonResponse({ error: "kgid column missing" }, 500);
-    
+
     for (let r = 1; r < rows.length; r++) {
       if (String(rows[r][kgidIdx]) === String(payload.kgid)) {
         sheet.deleteRow(r+1);
         return jsonResponse({ success: true });
       }
     }
-    
     return jsonResponse({ success: false, error: "Not found" }, 404);
   } catch (err) {
     Logger.log("deleteEmployee ERROR: " + err.toString());
@@ -153,317 +159,217 @@ function deleteEmployee(payload) {
   }
 }
 
-/** 
- * ✅ DEBUG VERSION: Returns debug info in JSON response
- * This allows us to see what's happening from Android logs
- */
+/** ----------------- Image upload & Firestore update ----------------- **/
+
+/*
+  uploadProfileImage(e)
+  - supports:
+    * e.postData.bytes (direct)
+    * multipart/form-data raw in e.postData.contents (common with Retrofit Multipart)
+    * JSON base64 { image: "data:image/png;base64,..." }
+  - updates Google Drive, sheet (photoUrl), and Firestore (officers collection)
+*/
 function uploadProfileImage(e) {
-  const debugInfo = [];
-  
   try {
-    debugInfo.push("START: uploadProfileImage called");
-    
-    if (!e || !e.postData) {
-      debugInfo.push("ERROR: No postData");
-      return jsonResponse({ 
-        success: false, 
-        error: "No POST data received",
-        debug: debugInfo,
-        url: null,
-        id: null
-      }, 400);
+    Logger.log("=== uploadProfileImage START ===");
+
+    if (!e) return jsonResponse({ success:false, error: "No event object" }, 400);
+
+    // debug logs
+    const ct = (e.postData && e.postData.type) ? e.postData.type : "";
+    Logger.log("postData.type: " + ct);
+    Logger.log("postData.contents exists: " + (e.postData && e.postData.contents ? "yes" : "no"));
+    Logger.log("postData.bytes exists: " + (e.postData && e.postData.bytes ? e.postData.bytes.length + " bytes" : "no"));
+
+    // 1) If postData.bytes present (Apps Script may populate it in some cases) -> use it directly
+    if (e.postData && e.postData.bytes && e.postData.bytes.length > 0) {
+      Logger.log("Using postData.bytes path");
+      const blob = Utilities.newBlob(e.postData.bytes, ct || "image/jpeg", "upload.jpg");
+      return handleBlobSaveAndSync(e, blob);
     }
-    
-    const contentType = e.postData.type || "";
-    debugInfo.push("Content-Type: " + contentType);
-    
-    const hasContents = !!e.postData.contents;
-    const contentsLength = e.postData.contents ? e.postData.contents.length : 0;
-    const hasBytes = !!e.postData.bytes;
-    const bytesLength = e.postData.bytes ? e.postData.bytes.length : 0;
-    
-    debugInfo.push("postData.contents: " + (hasContents ? "exists (" + contentsLength + " chars)" : "none"));
-    debugInfo.push("postData.bytes: " + (hasBytes ? "exists (" + bytesLength + " bytes)" : "none"));
-    
-    // Log first 200 chars of contents for debugging
-    if (e.postData.contents && e.postData.contents.length > 0) {
-      const firstChars = e.postData.contents.substring(0, 200);
-      debugInfo.push("First 200 chars: " + firstChars);
-    }
-    
-    const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-    let blob = null;
-    let kgid = null;
-    
-    // ✅ METHOD 1: Try e.postData.bytes directly
-    if (hasBytes && bytesLength > 0) {
-      debugInfo.push("METHOD 1: Trying postData.bytes directly");
-      
+
+    // 2) If JSON with base64 payload: { image: "data:image/jpeg;base64,..." }
+    if (e.postData && e.postData.contents && e.postData.type && e.postData.type.indexOf("application/json") >= 0) {
       try {
-        // Extract filename from contents if available
-        let fileName = "upload.jpg";
-        if (e.postData.contents) {
-          const fnMatch = e.postData.contents.match(/filename="([^"]+)"/);
-          if (fnMatch) {
-            fileName = fnMatch[1];
-            debugInfo.push("Extracted filename: " + fileName);
-            
-            // Extract kgid: "98765.jpg" -> "98765"
-            const kgidMatch = fileName.match(/^(\d+)\.jpg$/);
-            if (kgidMatch) {
-              kgid = kgidMatch[1];
-              debugInfo.push("Extracted kgid: " + kgid);
-            }
-          }
-        }
-        
-        blob = Utilities.newBlob(e.postData.bytes, "image/jpeg", fileName);
-        const blobBytes = blob.getBytes();
-        debugInfo.push("Blob created from bytes: " + blobBytes.length + " bytes");
-        
-        // Check JPEG signature
-        if (blobBytes.length >= 3 && blobBytes[0] === 0xFF && blobBytes[1] === 0xD8 && blobBytes[2] === 0xFF) {
-          debugInfo.push("✅ METHOD 1 SUCCESS: Valid JPEG signature (FF D8 FF)");
-          return handleBlobSaveAndSync(e, blob, kgid, debugInfo);
-        } else {
-          debugInfo.push("METHOD 1 FAILED: Doesn't look like JPEG");
-          debugInfo.push("First bytes: " + blobBytes.slice(0, 5).map(b => "0x" + b.toString(16).toUpperCase()).join(" "));
-          blob = null; // Reset for METHOD 2
+        const obj = JSON.parse(e.postData.contents);
+        if (obj.image) {
+          const base64 = (obj.image.indexOf(",") >= 0) ? obj.image.split(",")[1] : obj.image;
+          const bytes = Utilities.base64Decode(base64);
+          const mime = (obj.image.indexOf("data:") >= 0) ? obj.image.substring(5, obj.image.indexOf(";")) : "image/png";
+          const blob = Utilities.newBlob(bytes, mime, "upload.png");
+          Logger.log("Using JSON base64 path");
+          return handleBlobSaveAndSync(e, blob);
         }
       } catch (err) {
-        debugInfo.push("METHOD 1 ERROR: " + err.toString());
-        blob = null;
+        Logger.log("JSON base64 parse failed: " + err.toString());
       }
-    } else {
-      debugInfo.push("METHOD 1 SKIPPED: No postData.bytes");
     }
-    
-    // ✅ METHOD 2: Parse multipart from e.postData.contents
-    if (!blob && hasContents && contentType.indexOf("multipart/form-data") >= 0) {
-      debugInfo.push("METHOD 2: Trying multipart parsing");
-      
-      try {
-        const raw = e.postData.contents;
-        debugInfo.push("Raw content length: " + raw.length);
-        
-        // Extract boundary
-        const bMatch = contentType.match(/boundary=([^;]+)/);
-        let boundary = bMatch ? bMatch[1].trim() : null;
-        
-        if (!boundary) {
-          debugInfo.push("ERROR: No boundary found in Content-Type");
-          return jsonResponse({ 
-            success: false, 
-            error: "Invalid multipart: no boundary",
-            debug: debugInfo,
-            url: null,
-            id: null
-          }, 400);
-        }
-        
-        debugInfo.push("Boundary: " + boundary);
-        
-        // Split by boundary (with -- prefix)
+
+    // 3) Multipart/form-data raw in e.postData.contents (typical Retrofit multipart)
+    if (e.postData && e.postData.contents && ct && ct.indexOf("multipart/form-data") >= 0) {
+      Logger.log("Attempting multipart parser");
+      const raw = e.postData.contents;
+      // extract boundary
+      const bMatch = ct.match(/boundary=([^;]+)/);
+      let boundary = bMatch ? bMatch[1] : null;
+      if (!boundary) {
+        // try to detect a boundary string inside content
+        const possible = raw.substring(0, 100).split("\r\n")[0];
+        boundary = possible.replace(/^--/, "");
+        Logger.log("Fallback boundary guessed: " + boundary);
+      }
+      if (boundary) {
+        // normalize boundary tokens used for splitting
         const delim = "--" + boundary;
         const parts = raw.split(delim);
-        debugInfo.push("Parts found: " + parts.length);
-        
-        // Log first 200 chars of each part
-        for (let i = 0; i < Math.min(parts.length, 5); i++) {
-          debugInfo.push("Part " + i + " length: " + parts[i].length);
-          if (parts[i].length > 0) {
-            debugInfo.push("Part " + i + " first 100: " + parts[i].substring(0, 100));
-          }
-        }
-        
-        // Find file part
-        let filePartFound = false;
+        Logger.log("Multipart parts count: " + parts.length);
+
+        // iterate parts and find part having filename or name="file"
         for (let i = 0; i < parts.length; i++) {
-          const part = parts[i].trim();
-          
-          if (!part || part === "" || part === "--") continue;
-          
-          const hasNameFile = part.indexOf('name="file"') >= 0 || part.indexOf("name='file'") >= 0;
-          const hasFilename = part.indexOf("filename=") >= 0;
-          
-          debugInfo.push("Part " + i + " has name='file': " + hasNameFile + ", has filename: " + hasFilename);
-          
-          if (hasNameFile || hasFilename) {
-            debugInfo.push("✅ Found file part at index " + i);
-            filePartFound = true;
-            
-            // Extract filename
-            const fnMatch = part.match(/filename="([^"]+)"/) || part.match(/filename='([^']+)'/);
-            if (fnMatch) {
-              const fileName = fnMatch[1];
-              debugInfo.push("Filename: " + fileName);
-              
-              // Extract kgid: "98765.jpg" -> "98765"
-              const kgidMatch = fileName.match(/^(\d+)\.jpg$/);
-              if (kgidMatch) {
-                kgid = kgidMatch[1];
-                debugInfo.push("Extracted kgid: " + kgid);
-              }
-            }
-            
-            // Find header/body separator
+          const part = parts[i];
+          if (!part || part.length < 10) continue;
+          // check headers
+          if (part.indexOf("Content-Disposition") >= 0 && (part.indexOf("filename=") >= 0 || part.indexOf('name="file"') >= 0 || part.indexOf("name='file'") >= 0)) {
+            Logger.log("Found candidate file part at index: " + i);
+
+            // find header separator (support \r\n\r\n or \n\n)
             let headerEnd = part.indexOf("\r\n\r\n");
             let sepLen = 4;
-            
             if (headerEnd < 0) {
               headerEnd = part.indexOf("\n\n");
               sepLen = 2;
             }
-            
             if (headerEnd < 0) {
-              debugInfo.push("ERROR: No header/body separator in part " + i);
+              Logger.log("No header-body separator found in part");
               continue;
             }
-            
-            debugInfo.push("Header ends at position: " + headerEnd);
-            
-            // Extract body (file data)
+
+            // header block
+            const headersBlock = part.substring(0, headerEnd);
+            Logger.log("Headers block: " + headersBlock.substring(0, 200));
+
+            // extract filename if present
+            let filename = "upload.jpg";
+            const fnMatch = headersBlock.match(/filename="([^"]+)"/) || headersBlock.match(/filename='([^']+)'/);
+            if (fnMatch) {
+              filename = fnMatch[1];
+              Logger.log("Extracted filename: " + filename);
+            }
+
+            // guess mime type
+            let mime = "image/jpeg";
+            const ctMatch = headersBlock.match(/Content-Type:\s*(.+)/i);
+            if (ctMatch) mime = ctMatch[1].trim();
+
+            // extract body portion (everything after headerEnd)
             let body = part.substring(headerEnd + sepLen);
-            
-            // Clean up trailing boundary markers
-            body = body.replace(/\r\n--$/g, "").replace(/--$/g, "").replace(/^\r\n/, "").replace(/\r\n$/, "").trim();
-            
-            debugInfo.push("Body length after cleanup: " + body.length);
-            
-            if (body.length === 0) {
-              debugInfo.push("ERROR: Body is empty after cleanup");
-              continue;
+
+            // remove possible trailing boundary markers or CRLFs
+            body = body.replace(/\r\n--$/g, "").replace(/--$/g, "").replace(/^\r\n/, "").replace(/\r\n$/, "");
+            body = body.replace(/^\n/, "").replace(/\n$/, "");
+
+            Logger.log("Extracted body length (chars): " + body.length);
+
+            // Try to create blob directly from the string body (Apps Script will accept binary contained in string)
+            try {
+              const blob = Utilities.newBlob(body, mime, filename);
+              // quick sanity check: blob byte length > 0 and JPEG signature if jpeg
+              const bBytes = blob.getBytes();
+              Logger.log("Created blob from body length (bytes): " + bBytes.length);
+              if (bBytes && bBytes.length > 4) {
+                // looks like success
+                return handleBlobSaveAndSync(e, blob);
+              } else {
+                Logger.log("Blob from body had zero length");
+              }
+            } catch (errBlob) {
+              Logger.log("Blob creation from body failed: " + errBlob.toString());
             }
-            
-            // Convert string to bytes array
+
+            // Fallback: convert char codes -> bytes array (works if raw was preserved)
             try {
               const bytes = [];
               for (let j = 0; j < body.length; j++) {
                 bytes.push(body.charCodeAt(j) & 0xFF);
               }
-              
-              debugInfo.push("Converted to " + bytes.length + " bytes");
-              
-              // Check JPEG signature
-              if (bytes.length >= 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
-                debugInfo.push("✅ Valid JPEG signature (FF D8 FF)");
-                
-                const fileName = fnMatch ? fnMatch[1] : "upload.jpg";
-                blob = Utilities.newBlob(bytes, "image/jpeg", fileName);
-                debugInfo.push("✅ METHOD 2 SUCCESS: Blob created (" + blob.getBytes().length + " bytes)");
-                
-                return handleBlobSaveAndSync(e, blob, kgid, debugInfo);
-              } else {
-                debugInfo.push("ERROR: Doesn't look like JPEG");
-                debugInfo.push("First 10 bytes: " + bytes.slice(0, 10).map(b => "0x" + b.toString(16).toUpperCase()).join(" "));
+              const blob2 = Utilities.newBlob(bytes, mime, filename);
+              Logger.log("Created blob2 from char codes length: " + blob2.getBytes().length);
+              if (blob2.getBytes().length > 0) {
+                return handleBlobSaveAndSync(e, blob2);
               }
-            } catch (err) {
-              debugInfo.push("ERROR converting to bytes: " + err.toString());
+            } catch (err2) {
+              Logger.log("Fallback charCode blob creation failed: " + err2.toString());
             }
           }
-        }
-        
-        if (!filePartFound) {
-          debugInfo.push("ERROR: File part not found in any part");
-        }
-        
-        debugInfo.push("METHOD 2 FAILED: Could not extract file data");
-      } catch (err) {
-        debugInfo.push("METHOD 2 ERROR: " + err.toString());
+        } // end parts loop
       }
-    } else {
-      if (!hasContents) {
-        debugInfo.push("METHOD 2 SKIPPED: No postData.contents");
-      } else if (contentType.indexOf("multipart/form-data") < 0) {
-        debugInfo.push("METHOD 2 SKIPPED: Not multipart/form-data (Content-Type: " + contentType + ")");
-      }
+      // if multipart parsing falls through, we continue to final fallback below
+      Logger.log("Multipart parsing finished without producing blob");
     }
-    
-    // Final fallback
-    debugInfo.push("❌ ALL METHODS FAILED: No image data extracted");
-    return jsonResponse({ 
-      success: false, 
-      error: "No image data received",
-      debug: debugInfo,
-      url: null,
-      id: null
-    }, 400);
+
+    // final fallback: no image found
+    Logger.log("No image data available in request");
+    return jsonResponse({ success: false, error: "No image data received" }, 400);
 
   } catch (err) {
-    debugInfo.push("EXCEPTION: " + err.toString());
-    return jsonResponse({ 
-      success: false, 
-      error: err.toString(),
-      debug: debugInfo,
-      url: null,
-      id: null
-    }, 500);
+    Logger.log("uploadProfileImage EXCEPTION: " + err.toString());
+    return jsonResponse({ success: false, error: err.toString() }, 500);
   }
 }
 
-function handleBlobSaveAndSync(e, blob, kgid, debugInfo) {
+/** Helper: save blob to drive + update sheet + update firestore */
+function handleBlobSaveAndSync(e, blob) {
   try {
-    debugInfo.push("handleBlobSaveAndSync START");
-    
     if (!blob || blob.getBytes().length === 0) {
-      debugInfo.push("ERROR: Empty blob");
-      return jsonResponse({ 
-        success: false, 
-        error: "Empty blob",
-        debug: debugInfo,
-        url: null,
-        id: null
-      }, 400);
+      Logger.log("handleBlob: empty blob");
+      return jsonResponse({ success: false, error: "Empty blob" }, 400);
     }
-    
-    // Get kgid from query if not extracted
+
+    const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    // determine kgid either from filename or from query param
+    let kgid = null;
+    try {
+      const name = blob.getName();
+      const m = name && name.match(/^(\d+)(\D.*)?$/);
+      if (m) kgid = m[1];
+    } catch (err) {
+      Logger.log("kgid extract from filename failed: " + err.toString());
+    }
     if (!kgid && e && e.parameter && e.parameter.kgid) {
       kgid = e.parameter.kgid;
-      debugInfo.push("Using kgid from query: " + kgid);
+      Logger.log("kgid from param: " + kgid);
     }
-    
-    const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-    
-    // Create file in Drive
+
+    // compose file name
     const ts = new Date().getTime();
-    const ext = blob.getName().split('.').pop() || "jpg";
-    const fname = (kgid ? ("employee_" + kgid + "_" + ts) : ("employee_" + ts)) + "." + ext;
-    
+    const fname = (kgid ? ("employee_" + kgid + "_" + ts) : ("employee_" + ts)) + "." + (blob.getName().split('.').pop() || "jpg");
     const file = folder.createFile(blob.setName(fname));
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    
     const fileId = file.getId();
     const driveUrl = "https://drive.google.com/uc?export=view&id=" + fileId;
-    
-    debugInfo.push("✅ File uploaded: " + driveUrl);
-    
-    // Update sheet and Firestore if kgid available
+
+    Logger.log("File uploaded to Drive id=" + fileId + " url=" + driveUrl);
+
+    // update sheet if kgid present
     if (kgid) {
-      updateSheetFieldByKgid(kgid, "photoUrl", driveUrl);
-      updateFirebaseProfileImage(kgid, driveUrl);
-      debugInfo.push("Updated sheet and Firestore for kgid: " + kgid);
+      const updated = updateSheetFieldByKgid(kgid, "photoUrl", driveUrl);
+      Logger.log("Sheet update result: " + updated);
+      // update firestore
+      const status = updateFirebaseProfileImage(kgid, driveUrl);
+      Logger.log("Firestore update status: " + status);
+    } else {
+      Logger.log("No kgid provided; skipping sheet/firestore update");
     }
-    
-    return jsonResponse({ 
-      success: true, 
-      url: driveUrl, 
-      id: fileId, 
-      error: null,
-      debug: debugInfo
-    });
+
+    return jsonResponse({ success: true, url: driveUrl, id: fileId, error: null });
 
   } catch (err) {
-    debugInfo.push("handleBlobSaveAndSync ERROR: " + err.toString());
-    return jsonResponse({ 
-      success: false, 
-      error: err.toString(),
-      debug: debugInfo,
-      url: null,
-      id: null
-    }, 500);
+    Logger.log("handleBlobSaveAndSync ERROR: " + err.toString());
+    return jsonResponse({ success: false, error: err.toString() }, 500);
   }
 }
 
+/** Update a single header field in sheet for a kgid */
 function updateSheetFieldByKgid(kgid, field, value) {
   try {
     const sheet = getSheet();
@@ -471,16 +377,18 @@ function updateSheetFieldByKgid(kgid, field, value) {
     const headers = rows[0].map(h => String(h).trim());
     const idx = headers.indexOf(field);
     const kgidIdx = headers.indexOf("kgid");
-    
-    if (idx < 0 || kgidIdx < 0) return false;
-    
+    if (idx < 0 || kgidIdx < 0) {
+      Logger.log("updateSheetFieldByKgid: missing column: " + field + " or kgid");
+      return false;
+    }
     for (let r = 1; r < rows.length; r++) {
       if (String(rows[r][kgidIdx]) === String(kgid)) {
         sheet.getRange(r+1, idx+1).setValue(value);
+        Logger.log("updateSheetFieldByKgid: updated kgid=" + kgid + " field=" + field);
         return true;
       }
     }
-    
+    Logger.log("updateSheetFieldByKgid: kgid not found: " + kgid);
     return false;
   } catch (err) {
     Logger.log("updateSheetFieldByKgid ERROR: " + err.toString());
@@ -488,26 +396,33 @@ function updateSheetFieldByKgid(kgid, field, value) {
   }
 }
 
+/** Update Firestore document (collection: officers) */
 function updateFirebaseProfileImage(kgid, url) {
   try {
-    if (!FIREBASE_PROJECT_ID || !FIREBASE_API_KEY) return null;
-    
+    if (!FIREBASE_PROJECT_ID || !FIREBASE_API_KEY) {
+      Logger.log("Firebase config missing");
+      return null;
+    }
     const docPath = "projects/" + FIREBASE_PROJECT_ID + "/databases/(default)/documents/officers/" + encodeURIComponent(kgid);
     const firestoreUrl = "https://firestore.googleapis.com/v1/" + docPath + "?updateMask.fieldPaths=photoUrl&key=" + FIREBASE_API_KEY;
-    
+
     const payload = {
       fields: {
         photoUrl: { stringValue: url }
       }
     };
-    
+
     const res = UrlFetchApp.fetch(firestoreUrl, {
       method: "PATCH",
       contentType: "application/json",
       payload: JSON.stringify(payload),
       muteHttpExceptions: true
     });
-    
+
+    Logger.log("Firestore PATCH response code: " + res.getResponseCode());
+    if (res.getResponseCode() !== 200) {
+      Logger.log("Firestore response: " + res.getContentText());
+    }
     return res.getResponseCode();
   } catch (err) {
     Logger.log("updateFirebaseProfileImage ERROR: " + err.toString());
@@ -515,3 +430,20 @@ function updateFirebaseProfileImage(kgid, url) {
   }
 }
 
+/** Small helper to parse query string (if needed) */
+function parseQueryString(qs) {
+  const map = {};
+  if (!qs) return map;
+  const pairs = qs.split("&");
+  pairs.forEach(p => {
+    const kv = p.split("=");
+    try {
+      const k = decodeURIComponent(kv[0]);
+      const v = kv.length > 1 ? decodeURIComponent(kv.slice(1).join("=")) : "";
+      map[k] = v;
+    } catch (e) {
+      map[kv[0]] = kv.length > 1 ? kv.slice(1).join("=") : "";
+    }
+  });
+  return map;
+}

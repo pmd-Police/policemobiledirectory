@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -27,7 +28,14 @@ fun NotificationsScreen(
     navController: NavController,
     viewModel: EmployeeViewModel = hiltViewModel()
 ) {
-    val notifications by viewModel.userNotifications.collectAsState()
+    val isAdmin by viewModel.isAdmin.collectAsState()
+    val adminNotifications by viewModel.adminNotifications.collectAsState()
+    val userNotifications by viewModel.userNotifications.collectAsState()
+    val notifications = if (isAdmin) adminNotifications else userNotifications
+
+    LaunchedEffect(notifications, isAdmin) {
+        viewModel.markNotificationsRead(isAdmin, notifications)
+    }
 
     Scaffold(
         topBar = {
@@ -48,7 +56,7 @@ fun NotificationsScreen(
                     .padding(paddingValues),
                 contentAlignment = Alignment.Center
             ) {
-                Text("No notifications yet.")
+                Text(if (isAdmin) "No admin notifications yet." else "No notifications yet.")
             }
         } else {
             LazyColumn(
@@ -94,5 +102,7 @@ private fun formatTimestamp(timestamp: Long): String {
     val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
     return sdf.format(Date(timestamp))
 }
+
+
 
 

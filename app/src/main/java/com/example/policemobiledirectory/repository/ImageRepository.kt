@@ -1,29 +1,32 @@
 package com.example.policemobiledirectory.repository
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Base64
+import android.util.Log
 import com.example.policemobiledirectory.data.remote.*
 import com.example.policemobiledirectory.utils.OperationStatus
-import com.google.firebase.firestore.FirebaseFirestore
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.tasks.await
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.ResponseBody
-import android.util.Base64
-import com.example.policemobiledirectory.data.remote.Base64UploadRequest
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import com.google.gson.GsonBuilder
-import com.google.gson.JsonObject
-import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
-import kotlinx.coroutines.tasks.await
+import java.io.InputStream
+import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 /**
  * 🚓 ImageRepository.kt
@@ -34,8 +37,7 @@ import kotlinx.coroutines.tasks.await
  * 3️⃣ Deleting officer images from Drive when employee is removed
  */
 class ImageRepository(
-    private val context: Context,
-    private val firestore: FirebaseFirestore
+    private val context: Context
 ) {
 
     // ⚙️ Retrofit setup — your deployed Apps Script base URL (no action params here)
@@ -43,10 +45,16 @@ class ImageRepository(
         .setLenient() // ✅ Handle malformed JSON gracefully
         .create()
     
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .build()
+
     private val retrofit = Retrofit.Builder()
-        .baseUrl("https://script.google.com/macros/s/AKfycbzYtkFaye48h088E1iwRwnhg-XdO7PxnXlKDKWq0Mju8PzROAiXwtkktf7Zw_td90bI/")
+        .baseUrl("https://script.google.com/macros/s/AKfycbw3BybPar7IpUPm10nEDlT1UEbYMTiMsDvnxQyv9l3sf916Mk9DuDZcc4u_h8DV7vSI9w/")
         .addConverterFactory(GsonConverterFactory.create(gson))
-        .client(OkHttpClient.Builder().build())
+        .client(okHttpClient)
         .build()
 
     private val uploadService = retrofit.create(GDriveUploadService::class.java)
@@ -98,23 +106,22 @@ class ImageRepository(
 
         var tempFile: File? = null
         try {
-            Log.d("ImageRepository", "Step 1: Copying URI to temp file...")
-            // Step 1️⃣ Copy URI → temporary file
-            val inputStream = context.contentResolver.openInputStream(uri)
-            if (inputStream == null) {
-                Log.e("ImageRepository", "❌ Failed to open input stream from URI: $uri")
-                emit(OperationStatus.Error("Failed to read image file"))
-                return@flow
-            }
-            
-            tempFile = File.createTempFile("upload_", ".jpg", context.cacheDir)
-            Log.d("ImageRepository", "✅ Created temp file: ${tempFile.absolutePath}")
-            
-            val outputStream = FileOutputStream(tempFile)
-            inputStream.copyTo(outputStream)
-            inputStream.close()
-            outputStream.close()
-            Log.d("ImageRepository", "✅ Copied ${tempFile.length()} bytes to temp file")
+        Log.d("ImageRepository", "Step 1: Copying & compressing URI to temp file...")
+        val originalSize = try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize }
+        } catch (e: Exception) {
+            null
+        }
+
+        tempFile = copyAndCompressImage(context, uri)
+        if (tempFile == null || !tempFile.exists()) {
+            Log.e("ImageRepository", "❌ Failed to prepare temp file for upload")
+            emit(OperationStatus.Error("Failed to process selected image"))
+            return@flow
+        }
+
+        Log.d("ImageRepository", "✅ Temp file ready: ${tempFile.absolutePath}")
+        Log.d("ImageRepository", "📏 Original size: ${originalSize ?: -1} bytes, Compressed size: ${tempFile.length()} bytes")
 
             // Step 2️⃣ Convert to base64 and prepare JSON upload
             Log.d("ImageRepository", "Step 2: Converting to base64...")
@@ -189,20 +196,7 @@ class ImageRepository(
                 if (result != null && result.success && !result.url.isNullOrEmpty()) {
                     val photoUrl = result.url!!
                     Log.d("ImageRepository", "Upload successful, URL: $photoUrl")
-
-                    try {
-                        // Step 4️⃣ Update Firestore using coroutines (suspend)
-                        firestore.collection("officers")
-                            .document(userId)
-                            .update("photoUrl", photoUrl)
-                            .await()
-
-                        emit(OperationStatus.Success(photoUrl))
-                    } catch (fireErr: Exception) {
-                        Log.e("ImageRepository", "Firestore update failed: ${fireErr.message}", fireErr)
-                        emit(OperationStatus.Error("Upload OK, but Firestore update failed: ${fireErr.message}"))
-                    }
-
+                    emit(OperationStatus.Success(photoUrl))
                 } else {
                     // Response is not JSON or parsing failed
                     val errorMsg = if (result != null && result.error != null) {
@@ -302,4 +296,80 @@ class ImageRepository(
             emit(OperationStatus.Error("Delete failed: ${e.message}"))
         }
     }.flowOn(Dispatchers.IO)
+}
+
+private fun copyAndCompressImage(
+    context: Context,
+    uri: Uri,
+    maxDimension: Int = 1600,
+    quality: Int = 80
+): File? {
+    val resolver = context.contentResolver
+    return try {
+        val tempFile = File.createTempFile("upload_", ".jpg", context.cacheDir)
+
+        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, boundsOptions) }
+
+        if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) {
+            // Fallback: copy as-is
+            resolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+            }
+            return tempFile
+        }
+
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = calculateInSampleSize(boundsOptions, maxDimension)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+
+        val decodedBitmap = resolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, decodeOptions)
+        } ?: run {
+            tempFile.delete()
+            return null
+        }
+
+        val needsScaling = decodedBitmap.width > maxDimension || decodedBitmap.height > maxDimension
+        val processedBitmap: Bitmap = if (needsScaling) {
+            val ratio = minOf(
+                maxDimension.toFloat() / decodedBitmap.width.toFloat(),
+                maxDimension.toFloat() / decodedBitmap.height.toFloat()
+            )
+            val targetWidth = (decodedBitmap.width * ratio).roundToInt().coerceAtLeast(1)
+            val targetHeight = (decodedBitmap.height * ratio).roundToInt().coerceAtLeast(1)
+            Bitmap.createScaledBitmap(decodedBitmap, targetWidth, targetHeight, true)
+        } else {
+            decodedBitmap
+        }
+
+        FileOutputStream(tempFile).use { out ->
+            processedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+        }
+
+        if (processedBitmap !== decodedBitmap) {
+            decodedBitmap.recycle()
+        }
+        processedBitmap.recycle()
+
+        tempFile
+    } catch (e: Exception) {
+        Log.e("ImageRepository", "Image compression failed: ${e.message}", e)
+        null
+    }
+}
+
+private fun calculateInSampleSize(options: BitmapFactory.Options, maxDimension: Int): Int {
+    var inSampleSize = 1
+    val (height: Int, width: Int) = options.outHeight to options.outWidth
+    if (height > maxDimension || width > maxDimension) {
+        var halfHeight = height / 2
+        var halfWidth = width / 2
+
+        while ((halfHeight / inSampleSize) >= maxDimension || (halfWidth / inSampleSize) >= maxDimension) {
+            inSampleSize *= 2
+        }
+    }
+    return inSampleSize
 }

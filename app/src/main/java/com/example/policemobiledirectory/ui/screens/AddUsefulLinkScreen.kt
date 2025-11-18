@@ -77,18 +77,6 @@ fun AddUsefulLinkScreen(
         }
     }
 
-    fun extractPlayStoreIcon(playStoreUrl: String): String? {
-        return try {
-            val idPart = playStoreUrl.substringAfter("id=").substringBefore("&")
-            "https://play-lh.googleusercontent.com/a-/AD5-WCn$idPart=w480-h960"
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    fun isPlayStoreLink(link: String): Boolean =
-        link.contains("play.google.com/store/apps/details")
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -107,19 +95,20 @@ fun AddUsefulLinkScreen(
 
         OutlinedTextField(
             value = playStoreUrl,
-            onValueChange = {
-                playStoreUrl = it
-                if (isPlayStoreLink(it.text)) {
-                    extractPlayStoreIcon(it.text)?.let { icon ->
-                        iconUrl = icon
-                        Toast.makeText(context, "Play Store logo fetched automatically!", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            },
+            onValueChange = { playStoreUrl = it },
             label = { Text("Play Store or Website URL") },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 8.dp)
+        )
+
+        Text(
+            text = "Icons are auto-fetched from the Play Store when possible. You can also upload a custom logo below.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp)
         )
 
         OutlinedTextField(

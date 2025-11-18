@@ -24,12 +24,6 @@ fun AdminPanelScreen(
     val isAdmin by viewModel.isAdmin.collectAsState()
     val employeesList by viewModel.employees.collectAsState()
     val pendingRegistrationsList by viewModel.pendingRegistrations.collectAsState()
-    val adminNotifications by viewModel.adminNotifications.collectAsState()
-
-    // 🔹 Fetch notifications in real-time
-    LaunchedEffect(Unit) {
-        viewModel.fetchAdminNotifications()
-    }
 
     val employeesCount = employeesList.size
     val pendingRegistrationsCount = pendingRegistrationsList.size
@@ -57,43 +51,6 @@ fun AdminPanelScreen(
             ) {
 
                 if (isAdmin) {
-                // notification for new user registerd
-                    if (adminNotifications.isNotEmpty()) {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("🔔 Admin Alerts", style = MaterialTheme.typography.titleMedium)
-                                Spacer(Modifier.height(8.dp))
-
-                                adminNotifications.take(3).forEach { notif ->
-                                    val title = notif["title"] as? String ?: "New Notification"
-                                    val body = notif["body"] as? String ?: "No message available"
-                                    val timestamp = notif["timestamp"] as? Long
-
-                                    Text("• $title", style = MaterialTheme.typography.bodyMedium)
-                                    Text(body, style = MaterialTheme.typography.bodySmall)
-                                    timestamp?.let {
-                                        Text(
-                                            "⏱ ${java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a").format(java.util.Date(it))}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Spacer(Modifier.height(6.dp))
-                                }
-
-                                if (adminNotifications.size > 3) {
-                                    TextButton(onClick = { navController.navigate(Routes.SEND_NOTIFICATION) }) {
-                                        Text("View All Notifications")
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-
                     // 🔹 Admin Actions
                     ButtonRow(
                         icon = Icons.Filled.People,
