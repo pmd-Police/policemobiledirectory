@@ -6,6 +6,7 @@ import com.example.policemobiledirectory.data.local.EmployeeDao
 import com.example.policemobiledirectory.data.local.PendingRegistrationDao
 import com.example.policemobiledirectory.data.local.SessionManager
 import com.example.policemobiledirectory.repository.ConstantsRepository
+import com.example.policemobiledirectory.api.ConstantsApiService
 import com.example.policemobiledirectory.repository.EmployeeRepository
 import com.example.policemobiledirectory.repository.ImageRepository
 import com.example.policemobiledirectory.repository.PendingRegistrationRepository
@@ -65,8 +66,9 @@ object AppModule {
     @Provides
     @Singleton
     fun provideConstantsRepository(
-        @ApplicationContext context: Context
-    ): ConstantsRepository = ConstantsRepository(context)
+        @ApplicationContext context: Context,
+        apiService: ConstantsApiService
+    ): ConstantsRepository = ConstantsRepository(context, apiService)
 
     @Provides
     @Singleton

@@ -14,10 +14,10 @@ import retrofit2.http.Part
  * Uploads files to your Google Drive via Google Apps Script Web App.
  *
  * 🔗 Deployed Script URL:
- * https://script.google.com/macros/s/AKfycbw3BybPar7IpUPm10nEDlT1UEbYMTiMsDvnxQyv9l3sf916Mk9DuDZcc4u_h8DV7vSI9w/exec
+ * https://script.google.com/macros/s/AKfycbyEqYeeUGeToFPwhdTD2xs7uEWOzlwIjYm1f41KJCWiQYL2Swipgg_y10xRekyV1s2fjQ/exec
  *
  * ⚙️ Retrofit baseUrl (from ImageRepository.kt):
- * .baseUrl("https://script.google.com/macros/s/AKfycbw3BybPar7IpUPm10nEDlT1UEbYMTiMsDvnxQyv9l3sf916Mk9DuDZcc4u_h8DV7vSI9w/")
+ * .baseUrl("https://script.google.com/macros/s/AKfycbyEqYeeUGeToFPwhdTD2xs7uEWOzlwIjYm1f41KJCWiQYL2Swipgg_y10xRekyV1s2fjQ/")
  *
  * ✅ Then append "?action=uploadImage" here.
  */

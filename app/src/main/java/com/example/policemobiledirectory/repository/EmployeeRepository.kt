@@ -25,6 +25,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Transaction
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
@@ -103,7 +104,9 @@ open class EmployeeRepository @Inject constructor(
             }
 
             val doc = snapshot.documents.first()
-            val remoteEmployee = doc.toObject(Employee::class.java)
+            // ✅ CRITICAL FIX: Ensure kgid is set from document ID if field is missing
+            val docKgid = doc.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc.id
+            val remoteEmployee = doc.toObject(Employee::class.java)?.copy(kgid = docKgid)
             // read pin hash directly from document (defensive if Employee POJO doesn't contain it)
             val remotePinHash = doc.getString(FIELD_PIN_HASH).orEmpty()
 
@@ -155,7 +158,9 @@ open class EmployeeRepository @Inject constructor(
                 employeeDao.insertEmployee(updatedLocal)
             } else {
                 // If local missing, fetch the remote full object and insert
-                val updatedRemote = doc.toObject(Employee::class.java)
+                // ✅ CRITICAL FIX: Ensure kgid is set from document ID if field is missing
+                val docKgid = doc.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc.id
+                val updatedRemote = doc.toObject(Employee::class.java)?.copy(kgid = docKgid)
                 if (updatedRemote != null) {
                     val entity = buildEmployeeEntityFromDoc(doc, pinHash = newPinHash)
                     employeeDao.insertEmployee(entity)
@@ -335,7 +340,10 @@ open class EmployeeRepository @Inject constructor(
                 Log.e(TAG, "❌ No employee found for email: $email")
                 RepoResult.Error(null, "No employee found for this email")
             } else {
-                val emp = empSnap.documents.first().toObject(Employee::class.java)!!
+                val doc = empSnap.documents.first()
+                // ✅ CRITICAL FIX: Ensure kgid is set from document ID if field is missing
+                val docKgid = doc.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc.id
+                val emp = doc.toObject(Employee::class.java)!!.copy(kgid = docKgid)
                 employeeDao.insertEmployee(emp.toEntity())
                 Log.d(TAG, "✅ Employee data fetched and cached locally for $email")
                 RepoResult.Success(emp)
@@ -354,10 +362,10 @@ open class EmployeeRepository @Inject constructor(
     suspend fun syncAllEmployees(): RepoResult<Unit> = withContext(ioDispatcher) {
         try {
             val snapshot = employeesCollection.get().await()
-            val employees = snapshot.toObjects(Employee::class.java)
-            // Build entities defensively using underlying documents to capture pin if present
+            // ✅ CRITICAL FIX: Ensure kgid is set from document ID for all employees
             val entities = snapshot.documents.mapNotNull { doc ->
-                val emp = doc.toObject(Employee::class.java)
+                val docKgid = doc.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc.id
+                val emp = doc.toObject(Employee::class.java)?.copy(kgid = docKgid)
                 emp?.let { buildEmployeeEntityFromDoc(doc, pinHash = doc.getString(FIELD_PIN_HASH).orEmpty()) }
             }
             employeeDao.insertEmployees(entities)
@@ -375,10 +383,19 @@ open class EmployeeRepository @Inject constructor(
         emit(RepoResult.Loading)
         try {
             val kgid = emp.kgid.takeIf { !it.isNullOrBlank() } ?: generateAutoId()
+            // ✅ CRITICAL FIX: Ensure kgid is explicitly set in the Employee object
             val finalEmp = emp.copy(kgid = kgid)
-            employeesCollection.document(kgid).set(finalEmp).await()
-            // Insert into Room (no pin available here)
+            
+            // ✅ FIX: Use merge to preserve existing fields that aren't being updated
+            // This ensures fields like fcmToken, firebaseUid, etc. are not lost
+            employeesCollection.document(kgid).set(finalEmp, SetOptions.merge()).await()
+            
+            // ✅ Log the save for debugging
+            Log.d(TAG, "Saved employee: kgid=$kgid, metalNumber=${finalEmp.metalNumber}, name=${finalEmp.name}")
+            
+            // Insert/update into Room (no pin available here)
             employeeDao.insertEmployee(buildEmployeeEntityFromPojo(finalEmp))
+            
             emit(RepoResult.Success(true))
         } catch (e: Exception) {
             Log.e(TAG, "addOrUpdateEmployee failed", e)
@@ -398,6 +415,42 @@ open class EmployeeRepository @Inject constructor(
         }
     }.flowOn(ioDispatcher)
 
+    // Delete employee by email (helper function)
+    suspend fun deleteEmployeeByEmail(email: String): RepoResult<Boolean> = withContext(ioDispatcher) {
+        try {
+            // Find employee by email
+            val snapshot = employeesCollection.whereEqualTo(FIELD_EMAIL, email).limit(1).get().await()
+            val doc = snapshot.documents.firstOrNull()
+            
+            if (doc == null) {
+                return@withContext RepoResult.Error(null, "Employee with email $email not found")
+            }
+            
+            // ✅ CRITICAL FIX: Use document ID as kgid if field is missing
+            val kgid = doc.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc.id
+            val employee = doc.toObject(Employee::class.java)?.copy(kgid = kgid)
+            
+            // Delete from Firestore
+            employeesCollection.document(kgid).delete().await()
+            
+            // Delete from Room (local cache)
+            employeeDao.deleteByKgid(kgid)
+            
+            // Delete from Google Sheet if API is available
+            try {
+                apiService.deleteEmployee(kgid)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete from Google Sheet: ${e.message}")
+            }
+            
+            Log.i(TAG, "Successfully deleted employee: $kgid ($email)")
+            RepoResult.Success(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "deleteEmployeeByEmail failed", e)
+            RepoResult.Error(null, "Failed to delete employee: ${e.message}")
+        }
+    }
+
     fun getEmployees(): Flow<RepoResult<List<Employee>>> = flow {
         emit(RepoResult.Loading)
         try {
@@ -405,9 +458,10 @@ open class EmployeeRepository @Inject constructor(
             var cached = employeeDao.getAllEmployees().first()
             if (cached.isEmpty()) {
                 val snapshot = employeesCollection.get().await()
-                val employees = snapshot.toObjects(Employee::class.java)
+                // ✅ CRITICAL FIX: Ensure kgid is set from document ID for all employees
                 val entities = snapshot.documents.mapNotNull { doc ->
-                    val emp = doc.toObject(Employee::class.java)
+                    val docKgid = doc.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc.id
+                    val emp = doc.toObject(Employee::class.java)?.copy(kgid = docKgid)
                     emp?.let { buildEmployeeEntityFromDoc(doc, pinHash = doc.getString(FIELD_PIN_HASH).orEmpty()) }
                 }
                 employeeDao.insertEmployees(entities)
@@ -450,7 +504,9 @@ open class EmployeeRepository @Inject constructor(
     fun getPendingRegistrations(): Flow<List<PendingRegistrationEntity>> = flow {
         val snapshot = employeesCollection.whereEqualTo("rank", RANK_PENDING).get().await()
         val pending = snapshot.documents.mapNotNull { doc ->
-            val emp = doc.toObject(Employee::class.java)
+            // ✅ CRITICAL FIX: Ensure kgid is set from document ID if field is missing
+            val docKgid = doc.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc.id
+            val emp = doc.toObject(Employee::class.java)?.copy(kgid = docKgid)
             emp?.let {
                 if (it.kgid.isNullOrBlank() || it.email.isNullOrBlank()) return@mapNotNull null
                 PendingRegistrationEntity(
@@ -474,14 +530,22 @@ open class EmployeeRepository @Inject constructor(
     fun approvePendingRegistration(entity: PendingRegistrationEntity): Flow<RepoResult<Boolean>> = flow {
         emit(RepoResult.Loading)
         try {
-            val employee = entity.toEmployee().copy(rank = "Verified")
-            val pendingQuery = employeesCollection.whereEqualTo("kgid", entity.kgid).limit(1).get().await()
+            // ✅ CRITICAL FIX: Ensure kgid is set and not empty
+            val kgid = entity.kgid.trim().takeIf { it.isNotBlank() } 
+                ?: throw IllegalArgumentException("KGID is required for approval")
+            val employee = entity.toEmployee().copy(
+                rank = "Verified",
+                kgid = kgid // ✅ Explicitly ensure kgid is set
+            )
+            val pendingQuery = employeesCollection.whereEqualTo("kgid", kgid).limit(1).get().await()
             val pendingDocId = pendingQuery.documents.firstOrNull()?.id
-            val targetDocRef = employeesCollection.document(employee.kgid)
+            // ✅ CRITICAL FIX: Use kgid as document ID and ensure kgid field is included
+            val targetDocRef = employeesCollection.document(kgid)
 
             firestore.runBatch { batch ->
+                // ✅ CRITICAL FIX: Ensure kgid field is explicitly included in document (already set in employee object)
                 batch.set(targetDocRef, employee)
-                pendingDocId?.let { id -> if (id != employee.kgid) batch.delete(employeesCollection.document(id)) }
+                pendingDocId?.let { id -> if (id != kgid) batch.delete(employeesCollection.document(id)) }
             }.await()
 
             employeeDao.insertEmployee(employee.toEntity())
@@ -544,7 +608,9 @@ open class EmployeeRepository @Inject constructor(
         // Fallback: Firestore
         val snapshot = employeesCollection.whereEqualTo(FIELD_EMAIL, email).limit(1).get().await()
         val doc = snapshot.documents.firstOrNull()
-        val remote = doc?.toObject(Employee::class.java)
+        // ✅ CRITICAL FIX: Ensure kgid is set from document ID if field is missing
+        val docKgid = doc?.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc?.id ?: ""
+        val remote = doc?.toObject(Employee::class.java)?.copy(kgid = docKgid)
         if (remote != null && doc != null) {
             val entity = buildEmployeeEntityFromDoc(doc, pinHash = doc.getString(FIELD_PIN_HASH).orEmpty())
             employeeDao.insertEmployee(entity)
@@ -560,7 +626,9 @@ open class EmployeeRepository @Inject constructor(
             val email = user.email ?: return@withContext RepoResult.Error(null,"No email found")
             val snapshot = employeesCollection.whereEqualTo(FIELD_EMAIL, email).limit(1).get().await()
             val doc = snapshot.documents.firstOrNull()
-            val employee = doc?.toObject(Employee::class.java)
+            // ✅ CRITICAL FIX: Ensure kgid is set from document ID if field is missing
+            val docKgid = doc?.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc?.id ?: ""
+            val employee = doc?.toObject(Employee::class.java)?.copy(kgid = docKgid)
             if (doc != null && employee != null) {
                 val entity = buildEmployeeEntityFromDoc(doc, pinHash = doc.getString(FIELD_PIN_HASH).orEmpty())
                 employeeDao.insertEmployee(entity)
@@ -594,11 +662,13 @@ open class EmployeeRepository @Inject constructor(
             station = station,
             bloodGroup = bloodGroup,
             photoUrl = photoUrl,
+            photoUrlFromGoogle = photoUrlFromGoogle,
             fcmToken = fcmToken,
-            isAdmin = isAdmin,
-            createdAt = createdAt,
             firebaseUid = firebaseUid,
-            photoUrlFromGoogle = photoUrlFromGoogle
+            isAdmin = isAdmin,
+            isApproved = isApproved,
+            createdAt = createdAt,
+            updatedAt = updatedAt
         )
     }
 
@@ -617,20 +687,27 @@ open class EmployeeRepository @Inject constructor(
             station = station,
             bloodGroup = bloodGroup,
             photoUrl = photoUrl,
+            photoUrlFromGoogle = photoUrlFromGoogle,
             fcmToken = fcmToken,
-            isAdmin = isAdmin,
-            createdAt = createdAt,
             firebaseUid = firebaseUid,
-            photoUrlFromGoogle = photoUrlFromGoogle
+            isAdmin = isAdmin,
+            isApproved = isApproved,
+            createdAt = createdAt,
+            updatedAt = updatedAt
         )
     }
 
     // build EmployeeEntity from Firestore document (defensive)
     private fun buildEmployeeEntityFromDoc(doc: DocumentSnapshot, pinHash: String = ""): EmployeeEntity {
+        // ✅ CRITICAL FIX: Always use document ID as kgid if field is missing
+        val docKgid = doc.id // Document ID (e.g., "1953036")
+        
         val emp = doc.toObject(Employee::class.java)
         return if (emp != null) {
+            // Ensure kgid is set - use document ID if field is missing/empty
+            val finalKgid = if (emp.kgid.isNotBlank()) emp.kgid else docKgid
             EmployeeEntity(
-                kgid = emp.kgid,
+                kgid = finalKgid, // ✅ Always has a value (either from field or document ID)
                 name = emp.name ?: "",
                 email = emp.email ?: "",
                 mobile1 = emp.mobile1 ?: "",
@@ -641,30 +718,39 @@ open class EmployeeRepository @Inject constructor(
                 station = emp.station ?: "",
                 bloodGroup = emp.bloodGroup ?: "",
                 photoUrl = emp.photoUrl ?: "",
+                photoUrlFromGoogle = emp.photoUrlFromGoogle ?: "",
                 fcmToken = emp.fcmToken ?: "",
                 isAdmin = emp.isAdmin,
+                isApproved = emp.isApproved ?: true, // Default to true if missing
                 firebaseUid = emp.firebaseUid ?: "",
                 createdAt = emp.createdAt ?: Date(),
+                updatedAt = emp.updatedAt ?: Date(),
                 pin = pinHash
             )
         } else {
             // If doc couldn't be mapped to Employee, build from fields directly
+            // ✅ CRITICAL FIX: Use document ID as kgid if field is missing
+            val fieldKgid = doc.getString("kgid")
+            val finalKgid = if (!fieldKgid.isNullOrBlank()) fieldKgid else docKgid
             EmployeeEntity(
-                kgid = doc.getString("kgid") ?: "",
+                kgid = finalKgid, // ✅ Always has a value (either from field or document ID)
                 name = doc.getString("name") ?: "",
                 email = doc.getString("email") ?: "",
                 mobile1 = doc.getString("mobile1") ?: "",
                 mobile2 = doc.getString("mobile2") ?: "",
                 rank = doc.getString("rank") ?: "",
-                metalNumber = doc.getString("metalNumber") ?: "",
+                metalNumber = doc.getString("metal") ?: "", // Firestore field name: "metal"
                 district = doc.getString("district") ?: "",
                 station = doc.getString("station") ?: "",
                 bloodGroup = doc.getString("bloodGroup") ?: "",
                 photoUrl = doc.getString("photoUrl") ?: "",
+                photoUrlFromGoogle = doc.getString("photoUrlFromGoogle") ?: "",
                 fcmToken = doc.getString("fcmToken") ?: "",
                 isAdmin = doc.getBoolean("isAdmin") ?: false,
+                isApproved = doc.getBoolean("isApproved") ?: true, // Default to true if missing
                 firebaseUid = doc.getString("firebaseUid") ?: "",
                 createdAt = doc.getDate("createdAt") ?: Date(),
+                updatedAt = doc.getDate("updatedAt") ?: Date(),
                 pin = pinHash
             )
         }
@@ -684,10 +770,13 @@ open class EmployeeRepository @Inject constructor(
             station = emp.station ?: "",
             bloodGroup = emp.bloodGroup ?: "",
             photoUrl = emp.photoUrl ?: "",
+            photoUrlFromGoogle = emp.photoUrlFromGoogle ?: "",
             fcmToken = emp.fcmToken ?: "",
             isAdmin = emp.isAdmin,
+            isApproved = emp.isApproved,
             firebaseUid = emp.firebaseUid ?: "",
             createdAt = emp.createdAt ?: Date(),
+            updatedAt = emp.updatedAt ?: Date(),
             pin = pinHash
         )
     }
@@ -763,8 +852,44 @@ open class EmployeeRepository @Inject constructor(
         }
     }
 
-    suspend fun refreshEmployees() {
-        employeeDao.clearEmployees()
+    suspend fun refreshEmployees() = withContext(ioDispatcher) {
+        try {
+            // Clear existing cache
+            employeeDao.clearEmployees()
+            
+            // Force reload from Firestore
+            val snapshot = employeesCollection.get().await()
+            val entities = snapshot.documents.mapNotNull { doc ->
+                try {
+                    // ✅ CRITICAL FIX: Ensure kgid is set from document ID if field is missing
+                    val kgid = doc.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc.id
+                    val emp = doc.toObject(Employee::class.java)?.copy(kgid = kgid)
+                    
+                    // Skip deleted employees
+                    val isDeleted = doc.getBoolean("isDeleted") ?: false
+                    if (isDeleted) {
+                        Log.d(TAG, "Skipping deleted employee: $kgid")
+                        return@mapNotNull null
+                    }
+                    
+                    emp?.let { 
+                        buildEmployeeEntityFromDoc(doc, pinHash = doc.getString(FIELD_PIN_HASH).orEmpty()) 
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing employee document ${doc.id}: ${e.message}")
+                    null
+                }
+            }
+            
+            if (entities.isNotEmpty()) {
+                employeeDao.insertEmployees(entities)
+                Log.d(TAG, "✅ Refreshed ${entities.size} employees from Firestore")
+            } else {
+                Log.w(TAG, "⚠️ No employees found in Firestore after refresh")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to refresh employees from Firestore", e)
+        }
     }
 
 
@@ -842,6 +967,19 @@ open class EmployeeRepository @Inject constructor(
     suspend fun getEmployeeDirect(email: String): Employee? = withContext(ioDispatcher) {
         val entity = getEmployeeByEmail(email)
         entity?.toEmployee()
+    }
+    
+    /**
+     * ✅ Insert EmployeeEntity directly into local DB
+     * Used for refreshing current user after profile update
+     */
+    suspend fun insertEmployeeDirect(entity: EmployeeEntity) = withContext(ioDispatcher) {
+        try {
+            employeeDao.insertEmployee(entity)
+            Log.d(TAG, "✅ Inserted employee entity: kgid=${entity.kgid}, metalNumber=${entity.metalNumber}")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to insert employee entity: ${e.message}", e)
+        }
     }
 
 }

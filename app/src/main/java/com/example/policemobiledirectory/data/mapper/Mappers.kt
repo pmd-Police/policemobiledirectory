@@ -16,11 +16,13 @@ fun EmployeeEntity.toEmployee(): Employee = Employee(
     station = station,
     bloodGroup = bloodGroup,
     photoUrl = photoUrl,
-    fcmToken = fcmToken,
-    isAdmin = isAdmin,
-    firebaseUid = firebaseUid,
     photoUrlFromGoogle = photoUrlFromGoogle,
-    createdAt = createdAt
+    fcmToken = fcmToken,
+    firebaseUid = firebaseUid,
+    isAdmin = isAdmin,
+    isApproved = isApproved,
+    createdAt = createdAt,
+    updatedAt = updatedAt
 )
 
 fun Employee.toEntity(): EmployeeEntity = EmployeeEntity(
@@ -36,9 +38,11 @@ fun Employee.toEntity(): EmployeeEntity = EmployeeEntity(
     station = station,
     bloodGroup = bloodGroup,
     photoUrl = photoUrl,
-    fcmToken = fcmToken,
-    isAdmin = isAdmin,
-    firebaseUid = firebaseUid,
     photoUrlFromGoogle = photoUrlFromGoogle,
-    createdAt = createdAt
+    fcmToken = fcmToken,
+    firebaseUid = firebaseUid,
+    isAdmin = isAdmin,
+    isApproved = isApproved,
+    createdAt = createdAt,
+    updatedAt = updatedAt
 )

@@ -3,8 +3,10 @@ package com.example.policemobiledirectory.ui.components
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -15,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -49,32 +52,107 @@ fun EmployeeCardUser(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-            .clickable { onClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(12.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clickable { onClick() }
+            .shadow(
+                elevation = 8.dp,
+                shape = RoundedCornerShape(16.dp),
+                spotColor = com.example.policemobiledirectory.ui.theme.CardShadow,
+                ambientColor = com.example.policemobiledirectory.ui.theme.CardShadow.copy(alpha = 0.5f)
+            ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), // Using custom shadow instead
+        shape = RoundedCornerShape(16.dp), // More rounded corners
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Box(
             modifier = Modifier.background(
-                brush = Brush.linearGradient(listOf(startColor, endColor))
+                brush = Brush.linearGradient(listOf(startColor, endColor)),
+                alpha = com.example.policemobiledirectory.ui.theme.GlassOpacity
             )
         ) {
+            // 🔹 Blood Group badge in red circle at top right corner of card
+            val bloodGroup = employee.bloodGroup
+            if (!bloodGroup.isNullOrBlank()) {
+                val formattedBg = if (bloodGroup.trim() == "??") {
+                    "??"
+                } else {
+                    bloodGroup.uppercase()
+                        .replace("POSITIVE", "+")
+                        .replace("NEGATIVE", "–")
+                        .replace("VE", "")
+                        .replace("(", "")
+                        .replace(")", "")
+                        .trim()
+                        .let { clean ->
+                            when (clean) {
+                                "A" -> "A+"
+                                "B" -> "B+"
+                                "O" -> "O+"
+                                "AB" -> "AB+"
+                                "A-" -> "A–"
+                                "B-" -> "B–"
+                                "O-" -> "O–"
+                                "AB-" -> "AB–"
+                                else -> clean
+                            }
+                        }
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.error,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = (-8).dp, y = 8.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Text(
+                            text = formattedBg,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            fontSize = 9.sp
+                        )
+                    }
+                }
+            }
+            
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AsyncImage(
-                    model = employee.photoUrl ?: employee.photoUrlFromGoogle,
-                    contentDescription = "Employee Photo",
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape),
-                    placeholder = painterResource(R.drawable.officer),
-                    error = painterResource(R.drawable.officer)
-                )
+                // 🔹 Profile image with white border and shadow
+                Box {
+                    AsyncImage(
+                        model = employee.photoUrl ?: employee.photoUrlFromGoogle,
+                        contentDescription = "Employee Photo",
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .shadow(
+                                elevation = 4.dp,
+                                shape = CircleShape,
+                                spotColor = com.example.policemobiledirectory.ui.theme.CardShadow,
+                                ambientColor = com.example.policemobiledirectory.ui.theme.CardShadow.copy(alpha = 0.5f)
+                            ),
+                        placeholder = painterResource(R.drawable.officer),
+                        error = painterResource(R.drawable.officer)
+                    )
+                    // White border around avatar
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(Color.Transparent)
+                            .border(2.dp, Color.White, CircleShape)
+                    )
+                }
 
                 Spacer(Modifier.width(10.dp))
 
@@ -88,7 +166,7 @@ fun EmployeeCardUser(
                         text = employee.name,
                         fontWeight = FontWeight.Bold,
                         fontSize = (16 * fontScale).sp,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        color = Color.Black
                     )
 
                     val rankText = employee.displayRank.ifBlank { employee.rank.orEmpty() }
@@ -96,7 +174,7 @@ fun EmployeeCardUser(
                         Text(
                             text = rankText,
                             fontSize = (13 * fontScale).sp,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                            color = Color.Black.copy(alpha = 0.9f)
                         )
                     }
 
@@ -105,7 +183,7 @@ fun EmployeeCardUser(
                             .filter { it.isNotBlank() }
                             .joinToString(", "),
                         fontSize = (13 * fontScale).sp,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                        color = Color.Black.copy(alpha = 0.9f)
                     )
 
                     Row(
@@ -117,7 +195,7 @@ fun EmployeeCardUser(
                     ) {
                         Text(
                             text = employee.mobile1 ?: "No mobile",
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
+                            color = Color.Black.copy(alpha = 0.9f),
                             fontSize = (12 * fontScale).sp,
                             modifier = Modifier.weight(1f)
                         )
@@ -140,7 +218,7 @@ fun EmployeeCardUser(
                             Icon(
                                 imageVector = Icons.Filled.Call,
                                 contentDescription = "Call",
-                                tint = MaterialTheme.colorScheme.onPrimary,
+                                tint = Color.Black,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -162,7 +240,7 @@ fun EmployeeCardUser(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Message,
                                 contentDescription = "Message",
-                                tint = MaterialTheme.colorScheme.onPrimary,
+                                tint = Color.Black,
                                 modifier = Modifier.size(24.dp)
                             )
                         }

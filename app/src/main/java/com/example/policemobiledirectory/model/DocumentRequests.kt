@@ -11,7 +11,8 @@ data class DocumentUploadRequest(
     val fileBase64: String,
     val mimeType: String,
     val category: String?,
-    val description: String?
+    val description: String?,
+    val userEmail: String? = null  // ✅ For Apps Script authentication
 )
 
 // 🟡 Edit Existing Document (optional fields)
@@ -19,10 +20,12 @@ data class DocumentEditRequest(
     val oldTitle: String,
     val newTitle: String?,
     val category: String?,
-    val description: String?
+    val description: String?,
+    val userEmail: String? = null  // ✅ For Apps Script authentication
 )
 
 // 🔴 Delete Document
 data class DocumentDeleteRequest(
-    val title: String
+    val title: String,
+    val userEmail: String? = null  // ✅ For Apps Script authentication
 )

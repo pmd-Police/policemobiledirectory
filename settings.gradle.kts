@@ -3,7 +3,7 @@ pluginManagement {
         google()
         gradlePluginPortal()
         mavenCentral()
-        maven(url = "https://jitpack.io") // ✅ Added for uCrop and other GitHub libs
+        maven { url = uri("https://jitpack.io") } // ✅ Added for uCrop and other GitHub libs
     }
 }
 
@@ -12,9 +12,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven(url = "https://jitpack.io") // ✅ Added for uCrop
+        maven { url = uri("https://jitpack.io") } // ✅ Added for uCrop and POI
     }
 }
 
-rootProject.name = "EmployeeDirectory"
+rootProject.name = "PoliceMobileDirectory" // I inferred the name from your file path
 include(":app")

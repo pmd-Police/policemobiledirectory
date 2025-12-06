@@ -28,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import androidx.compose.ui.draw.clip
@@ -41,6 +42,9 @@ import coil.compose.rememberAsyncImagePainter
 import com.example.policemobiledirectory.data.local.PendingRegistrationEntity
 import com.example.policemobiledirectory.model.Employee
 import com.example.policemobiledirectory.utils.Constants
+import com.example.policemobiledirectory.viewmodel.ConstantsViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yalantis.ucrop.UCrop
 import java.io.File
 import java.io.FileOutputStream
@@ -66,19 +70,32 @@ fun CommonEmployeeForm(
     isRegistration: Boolean,
     initialEmployee: Employee? = null,
     initialKgid: String? = null,
+    initialEmail: String = "", // ✅ Add initialEmail parameter for prefilling
     onSubmit: (Employee, Uri?) -> Unit,
     onRegisterSubmit: ((PendingRegistrationEntity, Uri?) -> Unit)? = null,
     isLoading: Boolean = false, // ✅ Add loading state parameter
+    onNavigateToTerms: (() -> Unit)? = null, // ✅ Callback to navigate to terms
+    constantsViewModel: ConstantsViewModel = hiltViewModel(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var isSubmitting by remember { mutableStateOf(false) } // ✅ Track submission state
 
+    // Get constants from ViewModel
+    val ranks by constantsViewModel.ranks.collectAsStateWithLifecycle()
+    val districts by constantsViewModel.districts.collectAsStateWithLifecycle()
+    val stationsByDistrict by constantsViewModel.stationsByDistrict.collectAsStateWithLifecycle()
+    val bloodGroups by constantsViewModel.bloodGroups.collectAsStateWithLifecycle()
+    val ranksRequiringMetalNumber by constantsViewModel.ranksRequiringMetalNumber.collectAsStateWithLifecycle()
+
     // fields
     var kgid by remember(initialEmployee, initialKgid) { mutableStateOf(initialEmployee?.kgid ?: initialKgid.orEmpty()) }
     var name by remember(initialEmployee) { mutableStateOf(initialEmployee?.name ?: "") }
-    var email by remember(initialEmployee) { mutableStateOf(initialEmployee?.email ?: "") }
+    // ✅ Use initialEmail if provided, otherwise use initialEmployee.email
+    var email by remember(initialEmployee, initialEmail) { 
+        mutableStateOf(initialEmployee?.email ?: initialEmail) 
+    }
     var mobile1 by remember(initialEmployee) { mutableStateOf(initialEmployee?.mobile1 ?: "") }
     var mobile2 by remember(initialEmployee) { mutableStateOf(initialEmployee?.mobile2 ?: "") }
     var rank by remember(initialEmployee) { mutableStateOf(initialEmployee?.rank ?: "") }
@@ -102,9 +119,16 @@ fun CommonEmployeeForm(
     var showSourceDialog by remember { mutableStateOf(false) }
     var showValidationErrors by remember { mutableStateOf(false) }
 
-    val showMetalNumberField = remember(rank) { Constants.ranksRequiringMetalNumber.contains(rank) }
-    val stationsForSelectedDistrict = remember(district) {
-        if (district.isNotBlank()) Constants.stationsByDistrictMap[district] ?: emptyList() else emptyList()
+    val showMetalNumberField = remember(rank, ranksRequiringMetalNumber) { ranksRequiringMetalNumber.contains(rank) }
+    val stationsForSelectedDistrict = remember(district, stationsByDistrict) {
+        if (district.isNotBlank()) {
+            // Try exact match first
+            stationsByDistrict[district] 
+                ?: stationsByDistrict.keys.find { it.equals(district, ignoreCase = true) }?.let { stationsByDistrict[it] }
+                ?: emptyList()
+        } else {
+            emptyList()
+        }
     }
 
     // UCrop launcher
@@ -179,170 +203,421 @@ fun CommonEmployeeForm(
 
         Spacer(Modifier.height(sectionSpacing))
 
-        // KGID (admin & registration only)
-        if (!isSelfEdit) {
+        // Registration form custom order
+        if (isRegistration) {
+            // Row 2: Name
             OutlinedTextField(
-                value = kgid,
-                onValueChange = { kgid = it },
-                label = { Text("KGID*") },
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name*") },
                 modifier = Modifier.fillMaxWidth(),
-                isError = showValidationErrors && !isKgidValid(kgid),
-                enabled = isAdmin || isRegistration
+                isError = showValidationErrors && name.isBlank()
             )
-            if (showValidationErrors && !isKgidValid(kgid)) {
-                Text("KGID required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (showValidationErrors && name.isBlank()) {
+                Text("Name required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(fieldSpacing))
-        }
 
-        // Name
-        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name*") }, modifier = Modifier.fillMaxWidth(), isError = showValidationErrors && name.isBlank())
-        Spacer(Modifier.height(fieldSpacing))
-
-        // Email
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Email*") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            isError = showValidationErrors && !isValidEmail(email)
-        )
-        if (showValidationErrors && !isValidEmail(email)) Text("Enter valid email", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(fieldSpacing))
-
-        // Mobile1
-        OutlinedTextField(
-            value = mobile1,
-            onValueChange = { mobile1 = it.filter { ch -> ch.isDigit() } },
-            label = { Text("Mobile 1*") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            isError = showValidationErrors && !isValidMobile(mobile1)
-        )
-        if (showValidationErrors && !isValidMobile(mobile1)) Text("Enter valid mobile", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(fieldSpacing))
-
-        // Mobile2
-        OutlinedTextField(value = mobile2, onValueChange = { mobile2 = it.filter { ch -> ch.isDigit() } }, label = { Text("Mobile 2 (Optional)") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone))
-        Spacer(Modifier.height(fieldSpacing))
-
-        // Rank
-        ExposedDropdownMenuBox(expanded = rankExpanded, onExpandedChange = { rankExpanded = !rankExpanded }) {
+            // Row 3: Email
             OutlinedTextField(
-                value = rank.ifEmpty { "Select Rank" },
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Rank*") },
-                modifier = Modifier.fillMaxWidth().menuAnchor(),
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = rankExpanded) },
-                isError = showValidationErrors && rank.isBlank()
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email*") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                isError = showValidationErrors && !isValidEmail(email)
             )
-            ExposedDropdownMenu(expanded = rankExpanded, onDismissRequest = { rankExpanded = false }) {
-                Constants.allRanksList.forEach { selection ->
-                    DropdownMenuItem(text = { Text(selection) }, onClick = {
-                        rank = selection
-                        if (!Constants.ranksRequiringMetalNumber.contains(selection)) metalNumber = ""
-                        rankExpanded = false
-                    })
+            if (showValidationErrors && !isValidEmail(email)) {
+                Text("Enter valid email", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(fieldSpacing))
+
+            // Row 4: Mobile 1
+            OutlinedTextField(
+                value = mobile1,
+                onValueChange = { mobile1 = it.filter { ch -> ch.isDigit() } },
+                label = { Text("Mobile 1*") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                isError = showValidationErrors && !isValidMobile(mobile1)
+            )
+            if (showValidationErrors && !isValidMobile(mobile1)) {
+                Text("Enter valid mobile", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(fieldSpacing))
+
+            // Row 5: Mobile 2
+            OutlinedTextField(
+                value = mobile2,
+                onValueChange = { mobile2 = it.filter { ch -> ch.isDigit() } },
+                label = { Text("Mobile 2 (Optional)") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+            )
+            Spacer(Modifier.height(fieldSpacing))
+
+            // Row 6: KGID, Rank, Metal Number (conditional) - all in same row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // KGID
+                OutlinedTextField(
+                    value = kgid,
+                    onValueChange = { kgid = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("KGID*") },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = showValidationErrors && !isKgidValid(kgid),
+                    enabled = isAdmin || isRegistration
+                )
+
+                // Rank
+                ExposedDropdownMenuBox(
+                    expanded = rankExpanded,
+                    onExpandedChange = { rankExpanded = !rankExpanded },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        value = rank.ifEmpty { "Rank*" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Rank*") },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = rankExpanded) },
+                        isError = showValidationErrors && rank.isBlank()
+                    )
+                    ExposedDropdownMenu(expanded = rankExpanded, onDismissRequest = { rankExpanded = false }) {
+                        ranks.forEach { selection ->
+                            DropdownMenuItem(text = { Text(selection) }, onClick = {
+                                rank = selection
+                                if (!ranksRequiringMetalNumber.contains(selection)) metalNumber = ""
+                                rankExpanded = false
+                            })
+                        }
+                    }
+                }
+
+                // Metal Number (conditional - only show when required)
+                if (showMetalNumberField) {
+                    OutlinedTextField(
+                        value = metalNumber,
+                        onValueChange = { metalNumber = it.filter { ch -> ch.isDigit() } },
+                        label = { Text("Metal No.*") },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = showValidationErrors && metalNumber.isBlank()
+                    )
                 }
             }
-        }
-        if (showValidationErrors && rank.isBlank()) Text("Rank required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(fieldSpacing))
-
-        // Metal number
-        if (showMetalNumberField) {
-            OutlinedTextField(
-                value = metalNumber,
-                onValueChange = { metalNumber = it.filter { ch -> ch.isDigit() } },
-                label = { Text("Metal Number${if (isRegistration) "*" else ""}") },
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                isError = showValidationErrors && metalNumber.isBlank()
-            )
-            if (showValidationErrors && metalNumber.isBlank()) Text("Metal number required for this rank", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            // Error messages below the row
+            if (showValidationErrors) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    if (!isKgidValid(kgid)) {
+                        Text("KGID required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    }
+                    if (rank.isBlank()) {
+                        Text("Rank required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    }
+                    if (showMetalNumberField && metalNumber.isBlank()) {
+                        Text("Metal no. required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
             Spacer(Modifier.height(fieldSpacing))
-        }
 
-        // District (admin & registration editable; self-edit disabled)
-        ExposedDropdownMenuBox(expanded = districtExpanded, onExpandedChange = {
-            if (!isSelfEdit) districtExpanded = !districtExpanded
-        }) {
-            OutlinedTextField(
-                value = district.ifEmpty { if (isSelfEdit) district else "Select District" },
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("District*") },
-                modifier = Modifier.fillMaxWidth().menuAnchor(),
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = districtExpanded) },
-                isError = showValidationErrors && district.isBlank()
-            )
+            // Row 7: District
+            ExposedDropdownMenuBox(expanded = districtExpanded, onExpandedChange = {
+                if (!isSelfEdit) districtExpanded = !districtExpanded
+            }) {
+                OutlinedTextField(
+                    value = district.ifEmpty { "Select District" },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("District*") },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = districtExpanded) },
+                    isError = showValidationErrors && district.isBlank()
+                )
+                if (!isSelfEdit) {
+                    ExposedDropdownMenu(expanded = districtExpanded, onDismissRequest = { districtExpanded = false }) {
+                        districts.forEach { selection ->
+                            DropdownMenuItem(text = { Text(selection) }, onClick = {
+                                if (district != selection) station = ""
+                                district = selection
+                                districtExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+            if (showValidationErrors && district.isBlank()) {
+                Text("District required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(fieldSpacing))
+
+            // Row 8: Station, Blood (on same row)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Station
+                ExposedDropdownMenuBox(
+                    expanded = stationExpanded,
+                    onExpandedChange = {
+                        if (district.isNotBlank() && stationsForSelectedDistrict.isNotEmpty()) stationExpanded = !stationExpanded
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        value = station.ifEmpty { if (district.isNotBlank()) "Select Station" else "Select District First" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Station/Unit*") },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = stationExpanded) },
+                        enabled = district.isNotBlank() && stationsForSelectedDistrict.isNotEmpty(),
+                        isError = showValidationErrors && station.isBlank()
+                    )
+                    ExposedDropdownMenu(expanded = stationExpanded, onDismissRequest = { stationExpanded = false }) {
+                        stationsForSelectedDistrict.forEach { selection ->
+                            DropdownMenuItem(text = { Text(selection) }, onClick = {
+                                station = selection
+                                stationExpanded = false
+                            })
+                        }
+                    }
+                }
+
+                // Blood Group
+                ExposedDropdownMenuBox(
+                    expanded = bloodGroupExpanded,
+                    onExpandedChange = { bloodGroupExpanded = !bloodGroupExpanded },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        value = bloodGroup.ifEmpty { "Blood Group" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Blood Group") },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = bloodGroupExpanded) }
+                    )
+                    ExposedDropdownMenu(expanded = bloodGroupExpanded, onDismissRequest = { bloodGroupExpanded = false }) {
+                        bloodGroups.forEach { selection ->
+                            DropdownMenuItem(text = { Text(selection) }, onClick = {
+                                bloodGroup = selection
+                                bloodGroupExpanded = false
+                            })
+                        }
+                    }
+                }
+            }
+            if (showValidationErrors && station.isBlank()) {
+                Text("Station required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(fieldSpacing))
+
+            // Row 9: Create PIN, Confirm PIN (on same row)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) pin = it },
+                    label = { Text("Create PIN*") },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    isError = showValidationErrors && (pin.length != 6 || (pin.isNotEmpty() && pin != confirmPin))
+                )
+                OutlinedTextField(
+                    value = confirmPin,
+                    onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) confirmPin = it },
+                    label = { Text("Confirm PIN*") },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    isError = showValidationErrors && (confirmPin.length != 6 || (confirmPin.isNotEmpty() && pin != confirmPin))
+                )
+            }
+            if (showValidationErrors && (pin.length != 6 || pin != confirmPin)) {
+                Text("PIN must be 6 digits and match", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(fieldSpacing))
+
+            // Row 10: Terms and condition
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = acceptedTerms, onCheckedChange = { acceptedTerms = it })
+                Spacer(Modifier.width(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("I accept ")
+                    Text(
+                        text = "Terms & Conditions",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        modifier = Modifier.clickable {
+                            onNavigateToTerms?.invoke()
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.height(sectionSpacing))
+        } else {
+            // Non-registration form (admin/self-edit) - keep original order
+            // KGID (admin & registration only)
             if (!isSelfEdit) {
-                ExposedDropdownMenu(expanded = districtExpanded, onDismissRequest = { districtExpanded = false }) {
-                    Constants.districtsList.forEach { selection ->
+                OutlinedTextField(
+                    value = kgid,
+                    onValueChange = { kgid = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("KGID*") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = showValidationErrors && !isKgidValid(kgid),
+                    enabled = isAdmin || isRegistration
+                )
+                if (showValidationErrors && !isKgidValid(kgid)) {
+                    Text("KGID required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.height(fieldSpacing))
+            }
+
+            // Name
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name*") }, modifier = Modifier.fillMaxWidth(), isError = showValidationErrors && name.isBlank())
+            Spacer(Modifier.height(fieldSpacing))
+
+            // Email
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email*") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                isError = showValidationErrors && !isValidEmail(email)
+            )
+            if (showValidationErrors && !isValidEmail(email)) Text("Enter valid email", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(fieldSpacing))
+
+            // Mobile1
+            OutlinedTextField(
+                value = mobile1,
+                onValueChange = { mobile1 = it.filter { ch -> ch.isDigit() } },
+                label = { Text("Mobile 1*") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                isError = showValidationErrors && !isValidMobile(mobile1)
+            )
+            if (showValidationErrors && !isValidMobile(mobile1)) Text("Enter valid mobile", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(fieldSpacing))
+
+            // Mobile2
+            OutlinedTextField(value = mobile2, onValueChange = { mobile2 = it.filter { ch -> ch.isDigit() } }, label = { Text("Mobile 2 (Optional)") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone))
+            Spacer(Modifier.height(fieldSpacing))
+
+            // Rank
+            ExposedDropdownMenuBox(expanded = rankExpanded, onExpandedChange = { rankExpanded = !rankExpanded }) {
+                OutlinedTextField(
+                    value = rank.ifEmpty { "Select Rank" },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Rank*") },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = rankExpanded) },
+                    isError = showValidationErrors && rank.isBlank()
+                )
+                ExposedDropdownMenu(expanded = rankExpanded, onDismissRequest = { rankExpanded = false }) {
+                    ranks.forEach { selection ->
                         DropdownMenuItem(text = { Text(selection) }, onClick = {
-                            if (district != selection) station = ""
-                            district = selection
-                            districtExpanded = false
+                            rank = selection
+                            if (!ranksRequiringMetalNumber.contains(selection)) metalNumber = ""
+                            rankExpanded = false
                         })
                     }
                 }
             }
-        }
-        if (showValidationErrors && district.isBlank()) Text("District required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(fieldSpacing))
+            if (showValidationErrors && rank.isBlank()) Text("Rank required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(fieldSpacing))
 
-        // Station (editable for admin and self-edit; uses district)
-        ExposedDropdownMenuBox(expanded = stationExpanded, onExpandedChange = {
-            if (district.isNotBlank() && stationsForSelectedDistrict.isNotEmpty()) stationExpanded = !stationExpanded
-        }) {
-            OutlinedTextField(
-                value = station.ifEmpty { if (district.isNotBlank()) "Select Station" else "Select District First" },
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Station/Unit*") },
-                modifier = Modifier.fillMaxWidth().menuAnchor(),
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = stationExpanded) },
-                enabled = district.isNotBlank() && stationsForSelectedDistrict.isNotEmpty(),
-                isError = showValidationErrors && station.isBlank()
-            )
-            ExposedDropdownMenu(expanded = stationExpanded, onDismissRequest = { stationExpanded = false }) {
-                stationsForSelectedDistrict.forEach { selection ->
-                    DropdownMenuItem(text = { Text(selection) }, onClick = {
-                        station = selection
-                        stationExpanded = false
-                    })
+            // Metal number
+            if (showMetalNumberField) {
+                OutlinedTextField(
+                    value = metalNumber,
+                    onValueChange = { metalNumber = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Metal Number${if (isRegistration) "*" else ""}") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = showValidationErrors && metalNumber.isBlank()
+                )
+                if (showValidationErrors && metalNumber.isBlank()) Text("Metal number required for this rank", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(fieldSpacing))
+            }
+
+            // District (admin & registration editable; self-edit disabled)
+            ExposedDropdownMenuBox(expanded = districtExpanded, onExpandedChange = {
+                if (!isSelfEdit) districtExpanded = !districtExpanded
+            }) {
+                OutlinedTextField(
+                    value = district.ifEmpty { if (isSelfEdit) district else "Select District" },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("District*") },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = districtExpanded) },
+                    isError = showValidationErrors && district.isBlank()
+                )
+                if (!isSelfEdit) {
+                    ExposedDropdownMenu(expanded = districtExpanded, onDismissRequest = { districtExpanded = false }) {
+                        districts.forEach { selection ->
+                            DropdownMenuItem(text = { Text(selection) }, onClick = {
+                                if (district != selection) station = ""
+                                district = selection
+                                districtExpanded = false
+                            })
+                        }
+                    }
                 }
             }
-        }
-        if (showValidationErrors && station.isBlank()) Text("Station required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(fieldSpacing))
+            if (showValidationErrors && district.isBlank()) Text("District required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(fieldSpacing))
 
-        // Blood group
-        ExposedDropdownMenuBox(expanded = bloodGroupExpanded, onExpandedChange = { bloodGroupExpanded = !bloodGroupExpanded }) {
-            OutlinedTextField(value = bloodGroup.ifEmpty { "Select Blood Group" }, onValueChange = {}, readOnly = true, label = { Text("Blood Group") }, modifier = Modifier.fillMaxWidth().menuAnchor(), trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = bloodGroupExpanded) })
-            ExposedDropdownMenu(expanded = bloodGroupExpanded, onDismissRequest = { bloodGroupExpanded = false }) {
-                Constants.bloodGroupsList.forEach { selection ->
-                    DropdownMenuItem(text = { Text(selection) }, onClick = {
-                        bloodGroup = selection
-                        bloodGroupExpanded = false
-                    })
+            // Station (editable for admin and self-edit; uses district)
+            ExposedDropdownMenuBox(expanded = stationExpanded, onExpandedChange = {
+                if (district.isNotBlank() && stationsForSelectedDistrict.isNotEmpty()) stationExpanded = !stationExpanded
+            }) {
+                OutlinedTextField(
+                    value = station.ifEmpty { if (district.isNotBlank()) "Select Station" else "Select District First" },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Station/Unit*") },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = stationExpanded) },
+                    enabled = district.isNotBlank() && stationsForSelectedDistrict.isNotEmpty(),
+                    isError = showValidationErrors && station.isBlank()
+                )
+                ExposedDropdownMenu(expanded = stationExpanded, onDismissRequest = { stationExpanded = false }) {
+                    stationsForSelectedDistrict.forEach { selection ->
+                        DropdownMenuItem(text = { Text(selection) }, onClick = {
+                            station = selection
+                            stationExpanded = false
+                        })
+                    }
                 }
             }
-        }
-        Spacer(Modifier.height(sectionSpacing))
+            if (showValidationErrors && station.isBlank()) Text("Station required", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(fieldSpacing))
 
-        // Registration extras
-        if (isRegistration) {
-            OutlinedTextField(value = pin, onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) pin = it }, label = { Text("Create 6-digit PIN*") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
-            Spacer(Modifier.height(fieldSpacing))
-            OutlinedTextField(value = confirmPin, onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) confirmPin = it }, label = { Text("Confirm PIN*") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
-            Spacer(Modifier.height(fieldSpacing))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = acceptedTerms, onCheckedChange = { acceptedTerms = it })
-                Spacer(Modifier.width(8.dp))
-                Text("I accept Terms & Conditions")
+            // Blood group
+            ExposedDropdownMenuBox(expanded = bloodGroupExpanded, onExpandedChange = { bloodGroupExpanded = !bloodGroupExpanded }) {
+                OutlinedTextField(value = bloodGroup.ifEmpty { "Select Blood Group" }, onValueChange = {}, readOnly = true, label = { Text("Blood Group") }, modifier = Modifier.fillMaxWidth().menuAnchor(), trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = bloodGroupExpanded) })
+                ExposedDropdownMenu(expanded = bloodGroupExpanded, onDismissRequest = { bloodGroupExpanded = false }) {
+                    bloodGroups.forEach { selection ->
+                        DropdownMenuItem(text = { Text(selection) }, onClick = {
+                            bloodGroup = selection
+                            bloodGroupExpanded = false
+                        })
+                    }
+                }
             }
             Spacer(Modifier.height(sectionSpacing))
         }
@@ -363,15 +638,47 @@ fun CommonEmployeeForm(
                 
                 android.util.Log.d("CommonEmployeeForm", "✅ Starting validation...")
                 showValidationErrors = true
-                if (!isValidEmail(email) || !isValidMobile(mobile1) || name.isBlank() || (!isSelfEdit && !isRegistration && kgid.isBlank())) {
+                
+                // Basic validation
+                if (!isValidEmail(email) || !isValidMobile(mobile1) || name.isBlank()) {
                     Toast.makeText(context, "Please fix validation errors", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
+                
+                // KGID validation (required for admin add and registration, optional for self-edit)
+                if (!isSelfEdit && kgid.isBlank()) {
+                    Toast.makeText(context, "Please fix validation errors", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
+                
+                // Registration-specific validation
                 if (isRegistration) {
+                    // Validate rank
+                    if (rank.isBlank()) {
+                        Toast.makeText(context, "Rank is required", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    // Validate metal number if required for selected rank
+                    if (showMetalNumberField && metalNumber.isBlank()) {
+                        Toast.makeText(context, "Metal number is required for this rank", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    // Validate district
+                    if (district.isBlank()) {
+                        Toast.makeText(context, "District is required", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    // Validate station
+                    if (station.isBlank()) {
+                        Toast.makeText(context, "Station is required", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    // Validate PIN
                     if (pin.length != 6 || pin != confirmPin) {
                         Toast.makeText(context, "PIN mismatch or invalid", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
+                    // Validate terms acceptance
                     if (!acceptedTerms) {
                         Toast.makeText(context, "Accept terms to continue", Toast.LENGTH_SHORT).show()
                         return@Button

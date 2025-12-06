@@ -10,4 +10,7 @@
     <external-files-path name="images" path="Pictures" />
     <!-- Allows accessing files in /Android/data/<package>/files/Pictures -->
 
+    <files-path name="conversions" path="conversions/" />
+    <!-- Allows sharing files from files/conversions (text/pdf/docx exports) -->
+
 </paths>

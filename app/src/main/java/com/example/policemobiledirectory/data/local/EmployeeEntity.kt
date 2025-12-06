@@ -22,6 +22,7 @@ data class EmployeeEntity(
     val fcmToken: String? = null,
     val isAdmin: Boolean = false,
     val createdAt: Date? = null,
+    val updatedAt: Date? = null,
     val firebaseUid: String? = null,
     val photoUrlFromGoogle: String? = null,
     val isApproved: Boolean = true

@@ -16,9 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.example.policemobiledirectory.model.Employee
-import com.example.policemobiledirectory.utils.Constants
+import com.example.policemobiledirectory.viewmodel.ConstantsViewModel
 import com.example.policemobiledirectory.viewmodel.EmployeeViewModel
 import java.io.File
 import java.io.FileOutputStream
@@ -67,31 +69,40 @@ fun shareCsv(employees: List<Employee>, fileName: String, context: Context) {
 @Composable
 fun EmployeeStatsScreen(
     navController: NavController,
-    viewModel: EmployeeViewModel
+    viewModel: EmployeeViewModel,
+    constantsViewModel: ConstantsViewModel = hiltViewModel()
 ) {
     val allEmployees by viewModel.employees.collectAsState()
     val context = LocalContext.current
+    
+    // Get dynamic constants from ConstantsViewModel
+    val districts by constantsViewModel.districts.collectAsStateWithLifecycle()
+    val stationsByDistrict by constantsViewModel.stationsByDistrict.collectAsStateWithLifecycle()
+    val ranks by constantsViewModel.ranks.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.refreshEmployees() }
 
     // --- Filters ---
     var selectedDistrict by remember { mutableStateOf("All") }
     var districtExpanded by remember { mutableStateOf(false) }
-    val districtOptions = remember { listOf("All") + Constants.districtsList }
+    val districtOptions = remember(districts) { listOf("All") + districts }
 
     var selectedStation by remember { mutableStateOf("All") }
     var stationExpanded by remember { mutableStateOf(false) }
-    val stationOptions = remember(selectedDistrict, allEmployees) {
+    val stationOptions = remember(selectedDistrict, allEmployees, stationsByDistrict) {
         if (selectedDistrict == "All") {
             listOf("All") + allEmployees.mapNotNull { it.station?.trim() }.distinct().sorted()
         } else {
-            listOf("All") + (Constants.stationsByDistrictMap[selectedDistrict] ?: emptyList())
+            val stations = stationsByDistrict[selectedDistrict]
+                ?: stationsByDistrict.keys.find { it.equals(selectedDistrict, ignoreCase = true) }?.let { stationsByDistrict[it] }
+                ?: emptyList()
+            listOf("All") + stations
         }
     }
 
     var selectedRank by remember { mutableStateOf("All") }
     var rankExpanded by remember { mutableStateOf(false) }
-    val allRanksOptions = remember { listOf("All") + Constants.allRanksList }
+    val allRanksOptions = remember(ranks) { listOf("All") + ranks }
 
     // --- Filtered employees ---
     val filteredEmployees by remember(allEmployees, selectedDistrict, selectedStation, selectedRank) {
@@ -120,7 +131,12 @@ fun EmployeeStatsScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Employee Statistics") },
-                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = androidx.compose.ui.graphics.Color.White,
+                    navigationIconContentColor = androidx.compose.ui.graphics.Color.White
+                )
             )
         }
     ) { padding ->

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+      body { 
+        font-family: "Segoe UI", Roboto, sans-serif; 
+        background: #f8f9fa; 
+        padding: 12px; 
+        color: #202124; 
+        margin: 0;
+      }
+      
+      .card { 
+        background: white; 
+        padding: 14px; 
+        border-radius: 8px; 
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+        margin-bottom: 14px; 
+      }
+      
+      h3 { 
+        margin: 0 0 10px 0; 
+        font-size: 16px; 
+      }
+      
+      button { 
+        width: 100%; 
+        padding: 10px; 
+        border-radius: 6px; 
+        border: none; 
+        font-weight: 600; 
+        cursor: pointer; 
+        margin-top: 8px; 
+        transition: background 0.2s;
+      }
+      
+      button:hover:not(:disabled) {
+        opacity: 0.9;
+      }
+      
+      button:disabled { 
+        opacity: 0.6; 
+        cursor: not-allowed; 
+      }
+      
+      .btn-primary { 
+        background: #1a73e8; 
+        color: white; 
+      }
+      
+      .btn-warning { 
+        background: #fbbc05; 
+        color: #111; 
+      }
+      
+      .btn-orange { 
+        background: #ff9800; 
+        color: white; 
+      }
+      
+      .btn-danger { 
+        background: #d93025; 
+        color: white; 
+      }
+      
+      .btn-reset { 
+        background: #a50e0e; 
+        color: white; 
+        margin-top: 15px; 
+      }
+      
+      .progress { 
+        height: 10px; 
+        background: #e6e6e6; 
+        border-radius: 6px; 
+        overflow: hidden; 
+        margin: 12px 0; 
+      }
+      
+      #pBar { 
+        height: 100%; 
+        width: 0%; 
+        background: #34a853; 
+        transition: width 0.3s; 
+      }
+      
+      .stats-grid { 
+        display: grid; 
+        grid-template-columns: repeat(3, 1fr); 
+        gap: 8px; 
+        margin-top: 10px; 
+      }
+      
+      .stat-box { 
+        background: #f1f3f4; 
+        padding: 8px; 
+        border-radius: 6px; 
+        text-align: center; 
+      }
+      
+      .label { 
+        font-size: 11px; 
+        color: #5f6368; 
+      }
+      
+      .value { 
+        font-size: 15px; 
+        font-weight: bold; 
+      }
+      
+      #stuckWarn { 
+        display: none; 
+        background: #fff4e5; 
+        border: 1px solid #ffdcb1; 
+        padding: 8px; 
+        margin-top: 10px; 
+        border-radius: 6px; 
+        color: #a65a00; 
+        font-size: 12px; 
+      }
+      
+      input[type="text"] { 
+        width: 100%; 
+        padding: 8px; 
+        border-radius: 6px; 
+        border: 1px solid #ccc; 
+        box-sizing: border-box; 
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h3>🔁 Sync Controls</h3>
+      <button id="btn-pull" class="btn-primary">Download (Firebase → Sheet)</button>
+      <button id="btn-push" class="btn-warning">Upload (Sheet → Firebase)</button>
+      <button id="btn-dry" class="btn-orange">Dry Run (Preview Push)</button>
+      <button id="btn-archive" class="btn-danger">Archive Deleted Rows</button>
+      
+      <div class="progress">
+        <div id="pBar"></div>
+      </div>
+      
+      <div style="text-align: center; margin-bottom: 10px;">
+        <strong id="statusText">Idle</strong>
+      </div>
+      
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="label">Total</div>
+          <div class="value" id="statTotal">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">Done</div>
+          <div class="value" id="statDone">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">Phase</div>
+          <div class="value" id="statPhase">Idle</div>
+        </div>
+      </div>
+      
+      <div class="stats-grid" style="margin-top: 10px;">
+        <div class="stat-box">
+          <div class="label">FS KGID</div>
+          <div class="value" id="fsKgid">-</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">FS Progress</div>
+          <div class="value" id="fsProgress">-</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">Sheet Row</div>
+          <div class="value">
+            <span id="s2fKgid">-</span> / <span id="s2fRow">-</span>
+          </div>
+        </div>
+      </div>
+      
+      <div id="stuckWarn"></div>
+      
+      <button id="btn-reset" class="btn-reset">⚠️ Force Unlock Sync</button>
+    </div>
+
+    <div class="card">
+      <h3>🗑️ Soft Delete</h3>
+      <input id="delKgid" type="text" placeholder="Enter KGID">
+      <button id="btnDelete" class="btn-danger">Mark as Deleted</button>
+    </div>
+
+    <script>
+    (function(){
+      let pollInterval = null;
+
+      document.addEventListener('DOMContentLoaded', function() {
+        const btnPull = document.getElementById('btn-pull');
+        const btnPush = document.getElementById('btn-push');
+        const btnDelete = document.getElementById('btnDelete');
+        const btnDry = document.getElementById('btn-dry');
+        const btnArchive = document.getElementById('btn-archive');
+        const btnReset = document.getElementById('btn-reset'); 
+
+        if (btnReset) btnReset.addEventListener('click', forceReset);
+        if (btnArchive) btnArchive.addEventListener('click', startArchive);
+        if (btnDry) btnDry.addEventListener('click', startDryRun);
+        if (btnPull) btnPull.addEventListener('click', startPull);
+        if (btnPush) btnPush.addEventListener('click', startPush);
+        if (btnDelete) btnDelete.addEventListener('click', handleDelete);
+
+        // Initial status check
+        pollStatus();
+        
+        // Poll every 2.5 seconds
+        pollInterval = setInterval(pollStatus, 2500);
+      });
+
+      // Cleanup on page unload
+      window.addEventListener('beforeunload', function() {
+        if (pollInterval) clearInterval(pollInterval);
+      });
+
+      function setUI({ 
+        loading = false, 
+        status = "", 
+        pct = 0, 
+        phase = "", 
+        total = "-", 
+        done = "-", 
+        fsKgid = "-", 
+        fsProgress = "-", 
+        s2fKgid = "-", 
+        s2fRow = "-", 
+        stuckMsg = "" 
+      }) {
+        const pBar = document.getElementById('pBar');
+        const st = document.getElementById('statusText');
+        const btnPull = document.getElementById('btn-pull');
+        const btnPush = document.getElementById('btn-push');
+        const btnDry = document.getElementById('btn-dry');
+        const btnArchive = document.getElementById('btn-archive');
+
+        if (pBar) { 
+          pBar.style.width = pct + "%"; 
+          pBar.style.backgroundColor = loading ? "#0d6efd" : "#34a853"; 
+        }
+        
+        if (st) st.textContent = status || (loading ? "Working..." : "Idle");
+        
+        // Disable all buttons during operations
+        if (btnPull) btnPull.disabled = loading;
+        if (btnPush) btnPush.disabled = loading;
+        if (btnDry) btnDry.disabled = loading;
+        if (btnArchive) btnArchive.disabled = loading;
+        
+        document.getElementById('statTotal').textContent = total;
+        document.getElementById('statDone').textContent = done;
+        document.getElementById('statPhase').textContent = phase;
+        document.getElementById('fsKgid').textContent = fsKgid;
+        document.getElementById('fsProgress').textContent = fsProgress;
+        document.getElementById('s2fKgid').textContent = s2fKgid;
+        document.getElementById('s2fRow').textContent = s2fRow;
+        
+        const stuckEl = document.getElementById('stuckWarn');
+        if (stuckMsg) { 
+          stuckEl.style.display = 'block'; 
+          stuckEl.textContent = stuckMsg; 
+        } else { 
+          stuckEl.style.display = 'none'; 
+          stuckEl.textContent = ''; 
+        }
+      }
+
+      function pollStatus() {
+        google.script.run
+          .withSuccessHandler(status => {
+            // Add null check
+            if (!status) {
+              setUI({ loading: false, status: "Status Error" });
+              return;
+            }
+
+            const mode = status.mode || "Idle";
+            const pct = status.progress || 0;
+            const total = status.total || 0;
+            
+            let done = 0;
+            if (status.fs && status.fs.downloaded !== undefined) {
+              done = status.fs.downloaded;
+            }
+            if (status.s2f && status.s2f.uploaded !== undefined) {
+              done = Math.max(done, status.s2f.uploaded);
+            }
+            
+            const phase = mode === "TWO_WAY" 
+              ? (status.fs && status.fs.downloaded < (status.fs.total || 1) 
+                  ? "Downloading" 
+                  : (status.s2f && status.s2f.uploaded < (status.s2f.total || 1) 
+                      ? "Uploading" 
+                      : "Finishing")) 
+              : "Idle";
+            
+            const fsKgid = (status.fs && status.fs.currentKgid) ? status.fs.currentKgid : "-";
+            const s2fKgid = (status.s2f && status.s2f.currentKgid) ? status.s2f.currentKgid : "-";
+            const s2fRow = (status.s2f && status.s2f.currentRow) ? status.s2f.currentRow : "-";
+            const fsProgress = (status.fs && status.fs.total) 
+              ? `${status.fs.downloaded || 0}/${status.fs.total}` 
+              : "-";
+            
+            let stuckMsg = "";
+            if (mode === "TWO_WAY" && pct > 0 && pct < 100 && !fsKgid && !s2fKgid) { 
+              stuckMsg = "Sync appears active but no current item reported."; 
+            }
+            
+            setUI({ 
+              loading: mode === "TWO_WAY" && pct < 100, 
+              status: mode === "TWO_WAY" ? "Syncing..." : "Idle", 
+              pct, 
+              phase, 
+              total, 
+              done, 
+              fsKgid, 
+              fsProgress, 
+              s2fKgid, 
+              s2fRow, 
+              stuckMsg 
+            });
+          })
+          .withFailureHandler(err => {
+            setUI({ loading: false, status: "Status Error" });
+            console.error("Poll error:", err);
+          })
+          .sidebar_getBatchStatus();
+      }
+
+      function forceReset() {
+        if (!confirm("Force clear lock?")) return;
+        
+        setUI({ loading: true, status: "Resetting..." });
+        
+        google.script.run
+          .withSuccessHandler(() => {
+            setUI({ loading: false, status: "Idle" }); 
+            alert("Reset complete.");
+            pollStatus(); // Refresh status
+          })
+          .withFailureHandler(err => {
+            setUI({ loading: false, status: "Reset Error" });
+            alert("Error: " + err.message);
+          })
+          .resetSyncState();
+      }
+
+      function startPull() {
+        if (!confirm("Download from Firebase?")) return;
+        
+        setUI({ loading: true, status: "Downloading...", pct: 5 });
+        
+        google.script.run
+          .withSuccessHandler(r => {
+            setUI({ loading: false, status: "Idle", pct: 100 }); 
+            alert("Download Done.\n" + (r.message || "Success"));
+            pollStatus(); // Refresh status
+          })
+          .withFailureHandler(e => {
+            setUI({ loading: false, status: "Error" });
+            alert("Error: " + (e.message || e));
+          })
+          .pullDataFromFirebase();
+      }
+
+      function startPush() {
+        if (!confirm("Upload to Firebase?")) return;
+        
+        setUI({ loading: true, status: "Uploading...", pct: 5 });
+        
+        google.script.run
+          .withSuccessHandler(r => {
+            setUI({ loading: false, status: "Idle", pct: 100 }); 
+            alert("Upload Done.\n" + (r.message || "Success"));
+            pollStatus(); // Refresh status
+          })
+          .withFailureHandler(e => {
+            setUI({ loading: false, status: "Error" });
+            alert("Error: " + (e.message || e));
+          })
+          .pushDataToFirebase();
+      }
+
+      function startDryRun() {
+        if (!confirm("Run push DRY-RUN?")) return;
+        
+        setUI({ loading: true, status: "Dry-run...", pct: 10 });
+        
+        google.script.run
+          .withSuccessHandler(res => {
+            setUI({ loading: false, status: "Dry-run complete", pct: 100 });
+            alert("Changes found: " + (res.done || 0) + "\nCheck Sync Logs.");
+            pollStatus(); // Refresh status
+          })
+          .withFailureHandler(e => {
+            setUI({ loading: false, status: "Error" });
+            alert("Error: " + (e.message || e));
+          })
+          .dryRunPush();
+      }
+
+      function startArchive() {
+        if (!confirm("Archive deleted rows?")) return;
+        
+        google.script.run
+          .withSuccessHandler(res => {
+            alert(res || "Archive complete");
+            pollStatus(); // Refresh status
+          })
+          .withFailureHandler(e => {
+            alert("Error: " + (e.message || e));
+          })
+          .archiveAndCleanDeletedRows();
+      }
+
+      function handleDelete() {
+        const kgid = document.getElementById('delKgid').value.trim();
+        
+        if (!kgid) {
+          alert("Please enter a KGID");
+          return;
+        }
+        
+        if (!confirm("Delete KGID " + kgid + "?")) return;
+
+        google.script.run
+          .withSuccessHandler(res => { 
+            alert(res || "Success");
+            document.getElementById('delKgid').value = "";
+            pollStatus(); // Refresh stats immediately
+          })
+          .withFailureHandler(e => {
+            alert("Error: " + (e.message || e));
+          })
+          .sidebar_softDeleteKgid(kgid);
+      }
+
+    })();
+    </script>
+  </body>
+</html>
+
+
+
+
+
+

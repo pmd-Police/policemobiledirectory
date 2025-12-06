@@ -113,9 +113,14 @@ class PendingRegistrationRepository @Inject constructor(
     ----------------------------------------------------------- */
     suspend fun approve(entity: PendingRegistrationEntity): RepoResult<String> {
         return try {
+            // ✅ CRITICAL FIX: Validate kgid is not empty before approval
+            val kgid = entity.kgid.trim().takeIf { it.isNotBlank() }
+                ?: return RepoResult.Error(message = "KGID is required for approval")
+            
             val photoUrl = entity.photoUrl ?: entity.photoUrlFromGoogle
 
-            val employee = entity.toEmployee(photoUrl)
+            // ✅ CRITICAL FIX: Ensure kgid is explicitly set in Employee object
+            val employee = entity.toEmployee(photoUrl).copy(kgid = kgid)
 
             // 1️⃣ Save employee (Google Sheet + Room)
             val result = employeeRepository.addOrUpdateEmployee(employee).last()

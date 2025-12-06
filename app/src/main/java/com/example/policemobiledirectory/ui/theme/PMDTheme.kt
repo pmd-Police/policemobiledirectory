@@ -7,38 +7,38 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
-// Light color scheme with BlueGreyBackground
+// Light color scheme - Social Network Theme (Teal & Yellow)
 private val LightColors = lightColorScheme(
-    primary = PurplePrimary, // Purple for actions
-    onPrimary = OnImagePrimary,
-    primaryContainer = PurplePrimaryDark,
-    onPrimaryContainer = Color(0xFF1B1B1B), // ✅ readable dark text
+    primary = PrimaryTeal, // Teal for primary actions
+    onPrimary = TextOnTeal,
+    primaryContainer = PrimaryTealLight,
+    onPrimaryContainer = TextPrimary,
 
-    secondary = TealSecondary,
-    onSecondary = OnImageSecondary,
-    secondaryContainer = TealSecondaryDark,
-    onSecondaryContainer = OnImagePrimary,
+    secondary = SecondaryYellow, // Yellow for secondary actions
+    onSecondary = TextOnYellow,
+    secondaryContainer = SecondaryYellowLight,
+    onSecondaryContainer = TextPrimary,
 
-    tertiary = TealSecondaryDark,
-    onTertiary = OnImagePrimary,
-    tertiaryContainer = Color(0xFFACEAE5),
-    onTertiaryContainer = OnImageBackground,
+    tertiary = PrimaryTealDark,
+    onTertiary = TextOnTeal,
+    tertiaryContainer = PrimaryTealLight,
+    onTertiaryContainer = TextPrimary,
 
-    error = ImageError,
-    onError = OnImageError,
+    error = ErrorRed,
+    onError = TextOnTeal,
     errorContainer = Color(0xFFFCD8DF),
-    onErrorContainer = OnImageBackground,
+    onErrorContainer = TextPrimary,
 
-    background = BlueGreyBackground, // Blue Grey Background #CFD8DC
-    onBackground = OnImageBackground,
+    background = BackgroundLight, // Light off-white background
+    onBackground = TextPrimary,
 
-    surface = Color.White,
-    onSurface = OnImageBackground,
+    surface = BackgroundWhite, // White for cards
+    onSurface = TextPrimary,
 
-    surfaceVariant = Color(0xFFF8F8F8), // ✅ new softer background for drawers
-    onSurfaceVariant = OnImageBackground,
+    surfaceVariant = BackgroundCard, // White card background
+    onSurfaceVariant = TextSecondary,
 
-    outline = Color(0xFFB0BEC5)
+    outline = BorderLight
 )
 
 // Dark color scheme

@@ -32,7 +32,13 @@ fun AdminLoginScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Admin Login") })
+            TopAppBar(
+                title = { Text("Admin Login") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = androidx.compose.ui.graphics.Color.White
+                )
+            )
         }
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {

@@ -9,6 +9,19 @@ service cloud.firestore {
       allow read: if false;
     }
 
+    // 🔹 OFFICERS COLLECTION (Read-only contacts, no auth required)
+    match /officers/{officerId} {
+      // Allow anyone to read officers (read-only contacts, no login needed)
+      allow read: if true;
+      
+      // Only admins can write (for sync from Google Sheets via Apps Script)
+      allow create, update, delete: if isAdmin();
+      
+      // Allow Apps Script (unauthenticated) to write officers during sync
+      allow create, update: if request.auth == null
+                            && request.resource.data.keys().hasAll(['agid', 'name']);
+    }
+
     // 🔹 EMPLOYEES COLLECTION
     match /employees/{employeeId} {
 
@@ -61,14 +74,34 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
-    // 🔹 USEFUL LINKS COLLECTION (APK uploads)
+    // 🔹 USEFUL LINKS COLLECTION
     match /useful_links/{linkId} {
       allow read: if true;
+
+      // App writes: only authenticated admins
       allow create, update, delete: if isAdmin();
 
-      // Allow Apps Script (timestamp < 2030)
-      allow create: if request.time < timestamp.date(2030, 1, 1)
-                && request.resource.data.keys().hasAll(['name', 'apkUrl']);
+      // Apps Script sync (unauthenticated)
+      allow create, update: if request.auth == null
+                            && request.resource.data.keys().hasAll([
+                              'name',
+                              'playStoreUrl',
+                              'apkUrl',
+                              'iconUrl'
+                            ]);
+      allow delete: if request.auth == null;
+    }
+
+    // 🔹 GALLERY COLLECTION (Public Read, Admin/Apps Script Write)
+    match /gallery/{imageId} {
+      allow read: if true; // Public read access for all gallery images
+
+      // Admin can create, update, delete gallery images
+      allow create, update, delete: if isAdmin();
+
+      // Apps Script can create/update gallery images (unauthenticated)
+      allow create, update: if request.auth == null
+                            && request.resource.data.keys().hasAll(['imageUrl']);
     }
 
     // ------------ ADMIN CHECK ------------

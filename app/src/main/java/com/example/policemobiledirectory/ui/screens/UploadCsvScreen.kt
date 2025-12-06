@@ -54,7 +54,11 @@ fun UploadCsvScreen(
             TopAppBar(
                 title = { Text("Upload from CSV") },
                 navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.Default.ArrowBack, "Back") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = androidx.compose.ui.graphics.Color.White,
+                    navigationIconContentColor = androidx.compose.ui.graphics.Color.White
+                )
             )
         }
     ) { paddingValues ->

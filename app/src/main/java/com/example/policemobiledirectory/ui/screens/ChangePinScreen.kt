@@ -63,7 +63,12 @@ fun ChangePinScreen(
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = androidx.compose.ui.graphics.Color.White,
+                    navigationIconContentColor = androidx.compose.ui.graphics.Color.White
+                )
             )
         }
     ) { paddingValues ->

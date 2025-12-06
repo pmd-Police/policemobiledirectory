@@ -58,6 +58,7 @@ fun AddEditEmployeeScreen(
         isRegistration = false,
         initialEmployee = employee,
         initialKgid = employeeId,
+        onNavigateToTerms = null,
         onSubmit = { emp: Employee, photo: Uri? ->
             addEditViewModel.saveEmployee(emp, photo)
         },

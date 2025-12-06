@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -16,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -55,32 +58,83 @@ fun EmployeeCardAdmin(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(12.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .shadow(
+                elevation = 8.dp,
+                shape = RoundedCornerShape(16.dp),
+                spotColor = CardShadow,
+                ambientColor = CardShadow.copy(alpha = 0.5f)
+            ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), // Using custom shadow instead
+        shape = RoundedCornerShape(16.dp), // More rounded corners
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Box(
-            modifier = Modifier.background(
-                brush = Brush.linearGradient(listOf(startColor, endColor))
-            )
+            modifier = Modifier
+                .background(
+                    brush = Brush.linearGradient(listOf(startColor, endColor)),
+                    alpha = GlassOpacity
+                )
         ) {
+            // 🔹 Blood Group badge in red circle at top right corner of card
+            val bloodText = formatBloodGroup(employee.bloodGroup)
+            if (bloodText.isNotBlank()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.error,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = (-8).dp, y = 8.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Text(
+                            text = bloodText,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            fontSize = 9.sp
+                        )
+                    }
+                }
+            }
+            
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 🔹 Profile image
-                AsyncImage(
-                    model = employee.photoUrl ?: employee.photoUrlFromGoogle,
-                    contentDescription = "Employee Photo",
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape),
-                    placeholder = painterResource(R.drawable.officer),
-                    error = painterResource(R.drawable.officer)
-                )
+                // 🔹 Profile image with white border and shadow
+                Box {
+                    AsyncImage(
+                        model = employee.photoUrl ?: employee.photoUrlFromGoogle,
+                        contentDescription = "Employee Photo",
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .shadow(
+                                elevation = 4.dp,
+                                shape = CircleShape,
+                                spotColor = CardShadow,
+                                ambientColor = CardShadow.copy(alpha = 0.5f)
+                            ),
+                        placeholder = painterResource(R.drawable.officer),
+                        error = painterResource(R.drawable.officer)
+                    )
+                    // White border around avatar
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(Color.Transparent)
+                            .border(2.dp, Color.White, CircleShape)
+                    )
+                }
 
                 Spacer(Modifier.width(10.dp))
 
@@ -96,7 +150,7 @@ fun EmployeeCardAdmin(
                             text = employee.name,
                             fontWeight = FontWeight.Bold,
                             fontSize = (16 * fontScale).sp,
-                            color = MaterialTheme.colorScheme.onPrimary
+                            color = Color.Black
                         )
 
                         Spacer(Modifier.width(6.dp))
@@ -106,19 +160,7 @@ fun EmployeeCardAdmin(
                             Text(
                                 text = rankText,
                                 fontSize = (13 * fontScale).sp,
-                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
-                            )
-                        }
-
-                        Spacer(Modifier.weight(1f))
-
-                        val bloodText = formatBloodGroup(employee.bloodGroup)
-                        if (bloodText.isNotBlank()) {
-                            Text(
-                                text = bloodText,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = (13 * fontScale).sp
+                                color = Color.Black.copy(alpha = 0.9f)
                             )
                         }
                     }
@@ -128,7 +170,7 @@ fun EmployeeCardAdmin(
                         Text(
                             text = "KGID: ${employee.kgid}",
                             fontSize = (12 * fontScale).sp,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                            color = Color.Black.copy(alpha = 0.9f)
                         )
                     }
 
@@ -137,7 +179,7 @@ fun EmployeeCardAdmin(
                             .filter { it.isNotBlank() }
                             .joinToString(", "),
                         fontSize = (13 * fontScale).sp,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                        color = Color.Black.copy(alpha = 0.9f)
                     )
 
                     Spacer(Modifier.height(1.dp))
@@ -148,7 +190,7 @@ fun EmployeeCardAdmin(
                     ) {
                         Text(
                             text = employee.mobile1 ?: "No mobile",
-                            color = MaterialTheme.colorScheme.onPrimary,
+                            color = Color.Black,
                             fontSize = (13 * fontScale).sp,
                             modifier = Modifier.weight(1f)
                         )
@@ -161,7 +203,7 @@ fun EmployeeCardAdmin(
                             Icon(
                                 imageVector = Icons.Default.Phone,
                                 contentDescription = "Call",
-                                tint = MaterialTheme.colorScheme.onPrimary,
+                                tint = Color.Black,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -198,7 +240,7 @@ fun EmployeeCardAdmin(
                                 Icon(
                                     imageVector = Icons.Default.Edit,
                                     contentDescription = "Edit",
-                                    tint = MaterialTheme.colorScheme.onPrimary
+                                    tint = Color.Black
                                 )
                             }
 
@@ -209,7 +251,7 @@ fun EmployeeCardAdmin(
                                 Icon(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = "Delete",
-                                    tint = MaterialTheme.colorScheme.onPrimary
+                                    tint = Color.Black
                                 )
                             }
 
@@ -255,6 +297,10 @@ private fun openWhatsApp(context: Context, phone: String) {
 
 private fun formatBloodGroup(value: String?): String {
     if (value.isNullOrBlank()) return ""
+    
+    // If value is "??" (placeholder for not updated), return it as-is
+    if (value.trim() == "??") return "??"
+    
     val clean = value.uppercase()
         .replace("POSITIVE", "+")
         .replace("NEGATIVE", "–")

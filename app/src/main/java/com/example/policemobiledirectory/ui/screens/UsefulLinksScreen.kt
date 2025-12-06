@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -13,12 +14,16 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -40,14 +45,57 @@ fun UsefulLinksScreen(
 ) {
     val usefulLinks by viewModel.usefulLinks.collectAsState()
     val isAdmin by viewModel.isAdmin.collectAsState()
+    val pendingStatus by viewModel.pendingStatus.collectAsState()
     val context = LocalContext.current
+    var showDeleteDialog by remember { mutableStateOf<String?>(null) }
 
     // Fetch links when screen loads
     LaunchedEffect(Unit) { viewModel.fetchUsefulLinks() }
 
+    // Show toast for delete status
+    LaunchedEffect(pendingStatus) {
+        val status = pendingStatus
+        when (status) {
+            is com.example.policemobiledirectory.utils.OperationStatus.Success -> {
+                Toast.makeText(context, status.data ?: "Success", Toast.LENGTH_SHORT).show()
+                viewModel.resetPendingStatus()
+            }
+            is com.example.policemobiledirectory.utils.OperationStatus.Error -> {
+                Toast.makeText(context, status.message, Toast.LENGTH_SHORT).show()
+                viewModel.resetPendingStatus()
+            }
+            else -> {}
+        }
+    }
+
     Scaffold(
         topBar = {
-            CommonTopAppBar(title = "Useful Links", navController = navController)
+            TopAppBar(
+                title = { Text("Useful Links") },
+                navigationIcon = {
+                    if (navController.previousBackStackEntry != null) {
+                        IconButton(onClick = { navController.navigateUp() }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back"
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.width(0.dp))
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.fetchUsefulLinks() }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White
+                )
+            )
         },
         floatingActionButton = {
             if (isAdmin) {
@@ -81,51 +129,160 @@ fun UsefulLinksScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(usefulLinks) { link ->
-                        Column(
-                            modifier = Modifier
-                                .width(90.dp)
-                                .clickable {
-                                    handleLinkClick(context, link.playStoreUrl, link.apkUrl, link.name)
-                                },
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            val iconModel = link.iconUrl?.takeIf { it.isNotBlank() }
-                                ?: link.playStoreUrl?.takeIf { it.isNotBlank() }?.let {
-                                    "https://www.google.com/s2/favicons?sz=128&domain_url=$it"
-                                }
-                                ?: "https://cdn-icons-png.flaticon.com/512/732/732225.png"
-
-                            val painter = rememberAsyncImagePainter(
-                                model = ImageRequest.Builder(context)
-                                    .data(iconModel)
-                                    .crossfade(true)
-                                    .build(),
-                                placeholder = painterResource(id = R.drawable.app_logo),
-                                error = painterResource(id = R.drawable.app_logo)
-                            )
-
-                            Image(
-                                painter = painter,
-                                contentDescription = link.name,
+                        var showMenu by remember { mutableStateOf(false) }
+                        
+                        Box {
+                            Column(
                                 modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(RoundedCornerShape(16.dp)),
-                                contentScale = ContentScale.Crop
-                            )
+                                    .width(90.dp)
+                                    .clickable {
+                                        if (isAdmin) {
+                                            showMenu = true
+                                        } else {
+                                            handleLinkClick(context, link.playStoreUrl, link.apkUrl, link.name)
+                                        }
+                                    },
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                val iconModel = remember(link.iconUrl, link.playStoreUrl) {
+                                    when {
+                                        // 1. Use stored iconUrl (best quality fetched via ViewModel metadata parsing)
+                                        !link.iconUrl.isNullOrBlank() -> link.iconUrl
 
-                            Spacer(Modifier.height(6.dp))
+                                        // 2. Fallback: Use Google's favicon service for Play Store URLs
+                                        !link.playStoreUrl.isNullOrBlank() -> {
+                                            // Extract package name for better favicon URL
+                                            val packageName = getPackageNameFromPlayUrl(link.playStoreUrl)
+                                            if (!packageName.isNullOrBlank() && packageName != link.playStoreUrl) {
+                                                // Use Play Store domain with package ID for better icon
+                                                "https://www.google.com/s2/favicons?sz=128&domain_url=https://play.google.com/store/apps/details?id=$packageName"
+                                            } else {
+                                                // Fallback to generic Play Store favicon
+                                                "https://www.google.com/s2/favicons?sz=128&domain_url=play.google.com"
+                                            }
+                                        }
 
-                            Text(
-                                text = link.name,
-                                fontSize = 12.sp,
-                                textAlign = TextAlign.Center,
-                                fontWeight = FontWeight.Medium,
-                                lineHeight = 14.sp,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                                        else -> null
+                                    }
+                                }
 
+                                // ✅ Use generic placeholder instead of app logo - never show PMD logo for other apps
+                                val painter = rememberAsyncImagePainter(
+                                    model = ImageRequest.Builder(context)
+                                        .data(iconModel)
+                                        .crossfade(true)
+                                        .build(),
+                                    placeholder = null, // No placeholder - show loading state naturally
+                                    error = null // No error image - will show nothing if fails, not app logo
+                                )
+
+                                // ✅ Only show image if we have a valid icon URL, otherwise show placeholder box
+                                if (iconModel != null) {
+                                    Image(
+                                        painter = painter,
+                                        contentDescription = link.name,
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(RoundedCornerShape(16.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    // Show a generic placeholder box instead of app logo
+                                    Box(
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(id = android.R.drawable.ic_menu_gallery),
+                                            contentDescription = link.name,
+                                            modifier = Modifier.size(32.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(6.dp))
+
+                                Text(
+                                    text = link.name,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center,
+                                    fontWeight = FontWeight.Medium,
+                                    lineHeight = 14.sp,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            // ✅ Admin delete menu
+                            if (isAdmin) {
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Open") },
+                                        onClick = {
+                                            showMenu = false
+                                            handleLinkClick(context, link.playStoreUrl, link.apkUrl, link.name)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { 
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    Icons.Filled.Delete,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp),
+                                                    tint = MaterialTheme.colorScheme.error
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Delete", color = MaterialTheme.colorScheme.error)
+                                            }
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            if (link.documentId != null) {
+                                                showDeleteDialog = link.documentId
+                                            } else {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Cannot delete: Missing document ID",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
+                }
+                
+                // ✅ Delete confirmation dialog
+                showDeleteDialog?.let { docId ->
+                    AlertDialog(
+                        onDismissRequest = { showDeleteDialog = null },
+                        title = { Text("Delete Link") },
+                        text = { Text("Are you sure you want to delete this link? This action cannot be undone.") },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    viewModel.deleteUsefulLink(docId)
+                                    showDeleteDialog = null
+                                }
+                            ) {
+                                Text("Delete", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDeleteDialog = null }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
                 }
             }
         }

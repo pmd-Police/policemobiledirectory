@@ -11,18 +11,23 @@ import com.example.policemobiledirectory.data.local.PendingRegistrationEntity
 import com.example.policemobiledirectory.data.local.SearchFilter
 import com.example.policemobiledirectory.data.local.SessionManager
 import com.example.policemobiledirectory.data.mapper.toEmployee
+import com.example.policemobiledirectory.data.mapper.toEntity
 import com.example.policemobiledirectory.repository.*
 import com.example.policemobiledirectory.model.Employee
+import com.example.policemobiledirectory.model.Officer
 import com.example.policemobiledirectory.model.ExternalLinkInfo
 import com.example.policemobiledirectory.ui.screens.GoogleSignInUiEvent
 import com.example.policemobiledirectory.model.NotificationTarget
 import com.example.policemobiledirectory.model.AppNotification
 import com.example.policemobiledirectory.utils.OperationStatus
+import com.example.policemobiledirectory.utils.Constants
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.Source
+import com.google.firebase.storage.FirebaseStorage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
@@ -40,6 +45,7 @@ import com.example.policemobiledirectory.repository.RepoResult
 import com.example.policemobiledirectory.repository.AppIconRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 
 @HiltViewModel
@@ -49,6 +55,8 @@ open class EmployeeViewModel @Inject constructor(
     private val sessionManager: SessionManager,
     private val constantsRepository: ConstantsRepository,
     private val imageRepo: ImageRepository,
+    private val syncRepository: SyncRepository,
+    private val officerRepo: OfficerRepository,
     @ApplicationContext private val context: Context,
     private val auth: FirebaseAuth
 ) : ViewModel() {
@@ -83,11 +91,125 @@ open class EmployeeViewModel @Inject constructor(
     val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
     private val _employeeStatus = MutableStateFlow<OperationStatus<List<Employee>>>(OperationStatus.Loading)
     val employeeStatus: StateFlow<OperationStatus<List<Employee>>> = _employeeStatus.asStateFlow()
+    
+    // Officers (read-only contacts)
+    private val _officers = MutableStateFlow<List<Officer>>(emptyList())
+    val officers: StateFlow<List<Officer>> = _officers.asStateFlow()
+    private val _officerStatus = MutableStateFlow<OperationStatus<List<Officer>>>(OperationStatus.Loading)
+    val officerStatus: StateFlow<OperationStatus<List<Officer>>> = _officerStatus.asStateFlow()
+    
+    // Combined contacts (employees + officers) for unified search
+    data class Contact(
+        val employee: Employee? = null,
+        val officer: Officer? = null
+    ) {
+        val name: String get() = employee?.name ?: officer?.name ?: ""
+        val id: String get() = employee?.kgid ?: officer?.agid ?: ""
+        val rank: String? get() = employee?.rank ?: officer?.rank
+        val station: String? get() = employee?.station ?: officer?.station
+        val district: String? get() = employee?.district ?: officer?.district
+        val mobile1: String? get() = employee?.mobile1 ?: officer?.primaryPhone
+        val photoUrl: String? get() = employee?.photoUrl ?: employee?.photoUrlFromGoogle ?: officer?.photoUrl
+    }
+    
     private val _searchQuery = MutableStateFlow("")
+    private val _debouncedSearchQuery = MutableStateFlow("")
     private val _searchFilter = MutableStateFlow(SearchFilter.NAME)
     val searchFilter: StateFlow<SearchFilter> = _searchFilter.asStateFlow()
     private val _selectedDistrict = MutableStateFlow("All")
     private val _selectedStation = MutableStateFlow("All")
+    private val _selectedRank = MutableStateFlow("All")
+    val selectedRank: StateFlow<String> = _selectedRank.asStateFlow()
+
+    private data class SearchFilters(
+        val query: String,
+        val filter: SearchFilter,
+        val district: String,
+        val station: String,
+        val rank: String
+    )
+
+
+    private val searchFiltersFlow = combine(
+        _debouncedSearchQuery, // Use debounced query
+        _searchFilter,
+        _selectedDistrict,
+        _selectedStation,
+        _selectedRank
+    ) { query, filter, district, station, rank ->
+        SearchFilters(query, filter, district, station, rank)
+    }
+    
+    val allContacts: StateFlow<List<Contact>> = combine(_employees, _officers, _isAdmin) { employees, officers, isAdmin ->
+        // Filter employees: show only approved ones for regular users, all for admins
+        val filteredEmployees = if (isAdmin) {
+            employees // Admins see all employees
+        } else {
+            employees.filter { it.isApproved } // Regular users see only approved employees
+        }
+        
+        val employeeContacts = filteredEmployees.map { Contact(employee = it) }
+        val officerContacts = officers.map { Contact(officer = it) }
+        val allContactsList = employeeContacts + officerContacts
+        
+        // Debug logging
+        android.util.Log.d("ContactsFilter", "isAdmin: $isAdmin, Total employees: ${employees.size}, Approved: ${filteredEmployees.size}, Officers: ${officers.size}, Total contacts: ${allContactsList.size}")
+        
+        allContactsList
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    
+    // Optimized search with pre-filtering and efficient matching
+    val filteredContacts: StateFlow<List<Contact>> = combine(
+        allContacts,
+        searchFiltersFlow
+    ) { contacts, filters ->
+        // Early exit if no contacts
+        if (contacts.isEmpty()) return@combine emptyList<Contact>()
+        
+        // Step 1: Fast pre-filtering by district/station/rank (cheap operations)
+        // Simplified logic: When filter is "All", show everything. Otherwise, match specific values only.
+        val preFiltered = contacts.filter { contact ->
+            val districtMatch = filters.district == "All" || 
+                (contact.district?.equals(filters.district, ignoreCase = true) == true)
+            val stationMatch = filters.station == "All" || 
+                (contact.station?.equals(filters.station, ignoreCase = true) == true)
+            val rankMatch = filters.rank == "All" || 
+                (contact.rank?.equals(filters.rank, ignoreCase = true) == true)
+            
+            districtMatch && stationMatch && rankMatch
+        }
+        
+        // Early exit if no matches after pre-filtering
+        if (preFiltered.isEmpty()) return@combine emptyList<Contact>()
+        
+        // Step 2: Text search only on pre-filtered results (more expensive operation)
+        if (filters.query.isBlank()) {
+            return@combine preFiltered
+        }
+        
+        val queryLower = filters.query.lowercase().trim()
+        if (queryLower.isEmpty()) return@combine preFiltered
+        
+        // Optimized text matching
+        preFiltered.filter { contact ->
+            when {
+                contact.employee != null -> contact.employee.matchesOptimized(queryLower, filters.filter)
+                contact.officer != null -> {
+                    val filterString = when (filters.filter) {
+                        SearchFilter.NAME -> "name"
+                        SearchFilter.KGID -> "agid"
+                        SearchFilter.MOBILE -> "mobile"
+                        SearchFilter.STATION -> "station"
+                        SearchFilter.RANK -> "rank"
+                        SearchFilter.METAL_NUMBER -> "" // Officers don't have metal numbers
+                    }
+                    contact.officer.matchesOptimized(queryLower, filterString)
+                }
+                else -> false
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    
     private val _adminNotifications = MutableStateFlow<List<AppNotification>>(emptyList())
     val adminNotifications = _adminNotifications.asStateFlow()
     private val _userNotificationsLastSeen = MutableStateFlow(0L)
@@ -97,13 +219,37 @@ open class EmployeeViewModel @Inject constructor(
     private val _userNotifications = MutableStateFlow<List<AppNotification>>(emptyList())
     val userNotifications: StateFlow<List<AppNotification>> = _userNotifications.asStateFlow()
 
-    val filteredEmployees: StateFlow<List<Employee>> = combine(
-        _employees, _searchQuery, _searchFilter, _selectedDistrict, _selectedStation
-    ) { list, query, filter, district, station ->
-        list.filter { emp ->
-            (district == "All" || emp.district == district) &&
-                    (station == "All" || emp.station == station) &&
-                    (query.isBlank() || emp.matches(query, filter)) // ✅ fixed here
+    val filteredEmployees: StateFlow<List<Employee>> = combine(_employees, searchFiltersFlow, _isAdmin) { employees, filters, isAdmin ->
+        // Early exit if no employees
+        if (employees.isEmpty()) return@combine emptyList<Employee>()
+        
+        // ✅ CRITICAL FIX: Filter by approval status first (before other filters)
+        val approvedEmployees = if (isAdmin) {
+            employees // Admins see all employees
+        } else {
+            employees.filter { it.isApproved } // Regular users see only approved employees
+        }
+        
+        // Step 1: Fast pre-filtering by district/station/rank
+        val preFiltered = approvedEmployees.filter { emp ->
+            (filters.district == "All" || emp.district == filters.district) &&
+            (filters.station == "All" || emp.station == filters.station) &&
+            (filters.rank == "All" || emp.rank == filters.rank)
+        }
+        
+        // Early exit if no matches after pre-filtering
+        if (preFiltered.isEmpty()) return@combine emptyList<Employee>()
+        
+        // Step 2: Text search only on pre-filtered results
+        if (filters.query.isBlank()) {
+            return@combine preFiltered
+        }
+        
+        val queryLower = filters.query.lowercase().trim()
+        if (queryLower.isEmpty()) return@combine preFiltered
+        
+        preFiltered.filter { emp ->
+            emp.matchesOptimized(queryLower, filters.filter)
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
@@ -121,21 +267,37 @@ open class EmployeeViewModel @Inject constructor(
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme
     private val _fontScale = MutableStateFlow(1.0f)
     val fontScale: StateFlow<Float> = _fontScale.asStateFlow()
+    private val _firestoreToSheetStatus = MutableStateFlow<OperationStatus<String>>(OperationStatus.Idle)
+    val firestoreToSheetStatus: StateFlow<OperationStatus<String>> = _firestoreToSheetStatus.asStateFlow()
+
+    private val _sheetToFirestoreStatus = MutableStateFlow<OperationStatus<String>>(OperationStatus.Idle)
+    val sheetToFirestoreStatus: StateFlow<OperationStatus<String>> = _sheetToFirestoreStatus.asStateFlow()
 
     private var userNotificationsListener: ListenerRegistration? = null
     private var userNotificationsListenerKgid: String? = null
     private var adminNotificationsListener: ListenerRegistration? = null
 
+    // Constants from Constants.kt (primary source)
+    // Google Sheet is only a backup - no automatic syncing for performance
+    val districts: StateFlow<List<String>> = MutableStateFlow(Constants.districtsList).asStateFlow()
+    val ranks: StateFlow<List<String>> = MutableStateFlow(Constants.allRanksList).asStateFlow()
+    val bloodGroups: StateFlow<List<String>> = MutableStateFlow(Constants.bloodGroupsList).asStateFlow()
+    val stationsByDistrict: StateFlow<Map<String, List<String>>> = MutableStateFlow(Constants.stationsByDistrictMap).asStateFlow()
 
     init {
         Log.d("EmployeeVM", "🟢 ViewModel initialized")
 
         loadSession()
-        // 1️⃣ Sync constants once
+        // Constants.kt is the primary source - no automatic syncing
+
+        // 🚀 PERFORMANCE OPTIMIZATION: Debounce search query (300ms) to avoid searching on every keystroke
+        // This significantly improves performance for 10k+ users by reducing unnecessary filtering operations
         viewModelScope.launch {
-            val success = constantsRepository.refreshConstants()
-            if (success) Log.d("EmployeeVM", "✅ Constants synced")
-            else Log.e("EmployeeVM", "⚠️ Constants sync failed")
+            _searchQuery
+                .debounce(300) // Wait 300ms after user stops typing before filtering
+                .collect { query ->
+                    _debouncedSearchQuery.value = query
+                }
         }
 
         // 2️⃣ Observe login state from DataStore
@@ -198,8 +360,9 @@ open class EmployeeViewModel @Inject constructor(
                         }
                     }
 
-                    // Refresh employees after user restore
+                    // Refresh employees and officers after user restore
                     refreshEmployees()
+                    refreshOfficers()
                 } else {
                     Log.d("Session", "🔒 No stored email — user not logged in")
                     // Only clear if not already cleared (avoid unnecessary updates)
@@ -254,6 +417,28 @@ open class EmployeeViewModel @Inject constructor(
         }
     }
 
+    // =========================================================
+    // OPTIONAL: Manual Constants Sync from Google Sheets
+    // =========================================================
+    /**
+     * Manually sync constants from Google Sheets (optional, for backup/restore)
+     * This is NOT called automatically - only when admin explicitly requests it
+     * Use Constants.kt as the primary source for better performance
+     */
+    fun syncConstantsFromSheet() = viewModelScope.launch {
+        try {
+            val success = constantsRepository.refreshConstants()
+            if (success) {
+                Log.d("EmployeeVM", "✅ Constants synced from Google Sheet (backup)")
+                // Note: This updates cache, but app still uses Constants.kt
+                // To actually use Sheet data, you'd need to update Constants.kt file manually
+            } else {
+                Log.e("EmployeeVM", "⚠️ Constants sync from Sheet failed")
+            }
+        } catch (e: Exception) {
+            Log.e("EmployeeVM", "❌ Error syncing constants from Sheet: ${e.message}", e)
+        }
+    }
 
     // =========================================================
     // AUTHENTICATION (LOGIN, GOOGLE SIGN-IN, LOGOUT)
@@ -279,6 +464,9 @@ open class EmployeeViewModel @Inject constructor(
                                 _currentUser.value = refreshed
                                 _isAdmin.value = refreshed.isAdmin
                             }
+
+                            // ✅ Refresh admin status to ensure it's up to date
+                            checkIfAdmin()
 
                             _authStatus.value = OperationStatus.Success(user)
                             Log.d("Login", "✅ Logged in as ${user.name}, Admin=${user.isAdmin}")
@@ -679,17 +867,37 @@ open class EmployeeViewModel @Inject constructor(
         }
     }
 
-    private fun Employee.matches(query: String, filter: SearchFilter): Boolean {
-        // ✅ FIX: Use lowercase() for case-insensitive comparison
-        val q = query.lowercase()
+    // Optimized matching function (query is already lowercase)
+    private fun Employee.matchesOptimized(queryLower: String, filter: SearchFilter): Boolean {
         return when (filter) {
-            SearchFilter.NAME -> name.lowercase().contains(q)
-            SearchFilter.KGID -> kgid.lowercase().contains(q)
-            SearchFilter.MOBILE -> mobile1?.contains(q) == true || mobile2?.contains(q) == true
-            SearchFilter.STATION -> station?.lowercase()?.contains(q) == true
-            SearchFilter.RANK -> rank?.lowercase()?.contains(q) == true
-            SearchFilter.METAL_NUMBER -> metalNumber?.lowercase()?.contains(q) == true
+            SearchFilter.NAME -> {
+                // Fast path: check if query is at start (common case)
+                val nameLower = name.lowercase()
+                nameLower.startsWith(queryLower) || nameLower.contains(queryLower)
+            }
+            SearchFilter.KGID -> {
+                val kgidLower = kgid.lowercase()
+                kgidLower.startsWith(queryLower) || kgidLower.contains(queryLower)
+            }
+            SearchFilter.MOBILE -> {
+                // Mobile numbers: direct contains check (no lowercase needed for numbers)
+                mobile1?.contains(queryLower) == true || mobile2?.contains(queryLower) == true
+            }
+            SearchFilter.STATION -> {
+                station?.lowercase()?.contains(queryLower) == true
+            }
+            SearchFilter.RANK -> {
+                rank?.lowercase()?.contains(queryLower) == true
+            }
+            SearchFilter.METAL_NUMBER -> {
+                metalNumber?.lowercase()?.contains(queryLower) == true
+            }
         }
+    }
+    
+    // Legacy function for backward compatibility (kept for Officer.matches)
+    private fun Employee.matches(query: String, filter: SearchFilter): Boolean {
+        return matchesOptimized(query.lowercase().trim(), filter)
     }
 
 
@@ -714,6 +922,84 @@ open class EmployeeViewModel @Inject constructor(
             }
         } catch (e: Exception) {
             _employeeStatus.value = OperationStatus.Error("Refresh failed: ${e.message}")
+        }
+    }
+    
+    /**
+     * ✅ Refresh current user data from Firestore
+     * Call this after updating profile to ensure UI shows latest data
+     */
+    fun refreshCurrentUser() = viewModelScope.launch {
+        val currentKgid = _currentUser.value?.kgid
+        
+        if (currentKgid != null) {
+            try {
+                // First try local DB (faster)
+                val localEntity = employeeRepo.getLocalEmployeeByKgid(currentKgid)
+                if (localEntity != null) {
+                    _currentUser.value = localEntity.toEmployee()
+                    Log.d("EmployeeViewModel", "✅ Refreshed current user from local: ${localEntity.name}, metalNumber=${localEntity.metalNumber}")
+                }
+                
+                // Then refresh from Firestore to get latest data
+                val firestoreDoc = firestore.collection("employees").document(currentKgid).get().await()
+                val firestoreEmp = firestoreDoc.toObject(Employee::class.java)
+                if (firestoreEmp != null) {
+                    val finalEmp = firestoreEmp.copy(kgid = currentKgid)
+                    _currentUser.value = finalEmp
+                    Log.d("EmployeeViewModel", "✅ Refreshed current user from Firestore: ${finalEmp.name}, metalNumber=${finalEmp.metalNumber}")
+                    
+                    // Update local cache using mapper
+                    val entity = finalEmp.toEntity()
+                    employeeRepo.insertEmployeeDirect(entity)
+                }
+            } catch (e: Exception) {
+                Log.e("EmployeeViewModel", "❌ Exception refreshing current user: ${e.message}", e)
+            }
+        } else {
+            // Fallback: refresh by email
+            try {
+                val currentEmail = sessionManager.userEmail.first()
+                if (currentEmail.isNotBlank()) {
+                    when (val result = employeeRepo.getUserByEmail(currentEmail)) {
+                        is RepoResult.Success -> {
+                            result.data?.let { user ->
+                                _currentUser.value = user
+                                Log.d("EmployeeViewModel", "✅ Refreshed current user by email: ${user.name}, metalNumber=${user.metalNumber}")
+                            }
+                        }
+                        is RepoResult.Error -> {
+                            Log.e("EmployeeViewModel", "❌ Failed to refresh current user by email: ${result.message}")
+                        }
+                        else -> Unit
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("EmployeeViewModel", "❌ Exception refreshing current user by email: ${e.message}", e)
+            }
+        }
+    }
+    
+    fun refreshOfficers() = viewModelScope.launch {
+        _officerStatus.value = OperationStatus.Loading
+        try {
+            officerRepo.getOfficers().collect { result ->
+                when (result) {
+                    is RepoResult.Success -> {
+                        val list = result.data ?: emptyList()
+                        _officers.value = list
+                        _officerStatus.value = OperationStatus.Success(list)
+                    }
+                    is RepoResult.Error -> {
+                        _officerStatus.value = OperationStatus.Error(result.message ?: "Failed to load officers")
+                    }
+                    is RepoResult.Loading -> {
+                        _officerStatus.value = OperationStatus.Loading
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            _officerStatus.value = OperationStatus.Error("Refresh failed: ${e.message}")
         }
     }
 
@@ -1035,46 +1321,250 @@ open class EmployeeViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val collection = firestore.collection("useful_links")
-                val snapshot = collection.get().await()
-                val links = snapshot.documents.mapNotNull { doc ->
+                val snapshot = try {
+                    collection.get(Source.SERVER).await()
+                } catch (serverError: Exception) {
+                    Log.w("UsefulLinks", "Server fetch failed (${serverError.message}), falling back to cache")
+                    collection.get(Source.CACHE).await()
+                }
+
+                // Temporary list for immediate show (no icons yet)
+                _usefulLinks.value = snapshot.documents.mapNotNull { doc ->
+                    val link = doc.toObject(ExternalLinkInfo::class.java) ?: return@mapNotNull null
+                    link.copy(documentId = doc.id)
+                }
+
+                // Fetch icons in background
+                // Always try to fetch icons if playStoreUrl exists, even if iconUrl already exists
+                // This allows refreshing icons that might be stale or incorrect
+                val updatedLinks = snapshot.documents.mapNotNull { doc ->
                     val link = doc.toObject(ExternalLinkInfo::class.java) ?: return@mapNotNull null
 
-                    val resolvedIcon = when {
-                        link.iconUrl.isNullOrBlank() && link.playStoreUrl.isNotBlank() -> {
-                            try {
-                                val fetched = appIconRepository.getOrFetchAppIcon(link.playStoreUrl)
-                                if (!fetched.isNullOrBlank()) {
+                    val icon = if (!link.playStoreUrl.isNullOrBlank()) {
+                        try {
+                            // 🔥 ALWAYS fetch icon using favicon API (will use cache if valid)
+                            val fetched = appIconRepository.getOrFetchAppIcon(link.playStoreUrl)
+
+                            if (!fetched.isNullOrBlank()) {
+                                // Only update Firestore if icon changed or was missing
+                                if (link.iconUrl != fetched) {
                                     try {
                                         collection.document(doc.id).update("iconUrl", fetched).await()
-                                    } catch (updateError: Exception) {
-                                        Log.w(
-                                            "UsefulLinks",
-                                            "⚠️ Failed to persist icon for ${link.name}: ${updateError.message}"
-                                        )
+                                        Log.d("IconUpdate", "Updated icon for ${link.name}")
+                                    } catch (e: Exception) {
+                                        Log.w("IconUpdate", "Failed to save icon for ${link.name}: ${e.message}")
                                     }
                                 }
                                 fetched
-                            } catch (fetchError: Exception) {
-                                Log.e(
-                                    "UsefulLinks",
-                                    "❌ Icon fetch failed for ${link.name}: ${fetchError.message}"
-                                )
-                                null
+                            } else {
+                                // If fetch failed, use existing iconUrl if available
+                                link.iconUrl
                             }
+
+                        } catch (e: Exception) {
+                            Log.e("IconFetch", "Error fetching icon for ${link.name}: ${e.message}")
+                            // Fallback to existing iconUrl if fetch failed
+                            link.iconUrl
                         }
 
-                        else -> link.iconUrl
+                    } else {
+                        // No playStoreUrl, use existing iconUrl
+                        link.iconUrl
                     }
 
-                    link.copy(iconUrl = resolvedIcon)
+                    link.copy(
+                        iconUrl = icon,
+                        documentId = doc.id
+                    )
                 }
 
-                _usefulLinks.value = links
+                // 🔥 Update UI ONCE with full data
+                _usefulLinks.value = updatedLinks
+
             } catch (e: Exception) {
-                Log.e("Firestore", "❌ Failed to fetch useful links: ${e.message}", e)
+                Log.e("Firestore", "Failed to fetch useful links: ${e.message}")
                 _usefulLinks.value = emptyList()
             }
         }
+    }
+
+
+    fun deleteUsefulLink(documentId: String) = viewModelScope.launch {
+        try {
+            _pendingStatus.value = OperationStatus.Loading
+            firestore.collection("useful_links").document(documentId).delete().await()
+            
+            // ✅ Remove from local state immediately
+            _usefulLinks.value = _usefulLinks.value.filter { it.documentId != documentId }
+            _pendingStatus.value = OperationStatus.Success("Link deleted successfully")
+            
+            Log.d("UsefulLinks", "✅ Deleted link: $documentId")
+        } catch (e: Exception) {
+            Log.e("UsefulLinks", "❌ Failed to delete link: ${e.message}", e)
+            _pendingStatus.value = OperationStatus.Error("Failed to delete: ${e.message}")
+        }
+    }
+
+    fun addUsefulLink(
+        name: String,
+        playStoreUrl: String,
+        apkUrl: String,
+        iconUrl: String,
+        apkFileUri: Uri?,
+        imageUri: Uri?
+    ) = viewModelScope.launch {
+        _pendingStatus.value = OperationStatus.Loading
+
+        try {
+            var finalIconUrl = iconUrl.trim().takeIf { it.isNotBlank() }
+            var finalApkUrl = apkUrl.trim().takeIf { it.isNotBlank() }
+
+            // Upload APK file if provided
+            if (finalApkUrl.isNullOrBlank() && apkFileUri != null) {
+                Log.d("UsefulLinks", "Uploading APK file: $apkFileUri")
+                finalApkUrl = uploadUsefulLinkApk(apkFileUri, name)
+                if (finalApkUrl == null) {
+                    throw Exception("Failed to upload APK file. Please check your internet connection and try again.")
+                }
+                Log.d("UsefulLinks", "APK uploaded successfully: $finalApkUrl")
+            }
+
+            // Upload icon image if provided
+            if (finalIconUrl.isNullOrBlank() && imageUri != null) {
+                Log.d("UsefulLinks", "Uploading icon image: $imageUri")
+                finalIconUrl = uploadUsefulLinkIcon(imageUri, name)
+                if (finalIconUrl == null) {
+                    Log.w("UsefulLinks", "Icon upload failed, continuing without icon")
+                } else {
+                    Log.d("UsefulLinks", "Icon uploaded successfully: $finalIconUrl")
+                }
+            }
+
+            // Fetch icon from Play Store if no icon provided
+            if (finalIconUrl.isNullOrBlank() && playStoreUrl.isNotBlank()) {
+                try {
+                    finalIconUrl = appIconRepository.getOrFetchAppIcon(playStoreUrl)
+                    Log.d("UsefulLinks", "Fetched icon from Play Store: $finalIconUrl")
+                } catch (e: Exception) {
+                    Log.w("UsefulLinks", "Icon fetch fallback failed: ${e.message}")
+                }
+            }
+
+            val data = mutableMapOf<String, Any>(
+                "name" to name.trim(),
+                "createdAt" to System.currentTimeMillis(),
+                "updatedAt" to System.currentTimeMillis()
+            )
+
+            if (playStoreUrl.isNotBlank()) data["playStoreUrl"] = playStoreUrl.trim()
+            finalApkUrl?.let { 
+                data["apkUrl"] = it
+                Log.d("UsefulLinks", "Saving link with APK URL: $it")
+            }
+            finalIconUrl?.let { data["iconUrl"] = it }
+
+            // Two separate flows validated:
+            // Flow 1: Play Store link (APK optional)
+            // Flow 2: APK file/URL (Play Store link optional)
+            if (!data.containsKey("playStoreUrl") && !data.containsKey("apkUrl")) {
+                throw IllegalArgumentException("Provide either Play Store URL OR APK file/URL")
+            }
+
+            Log.d("UsefulLinks", "Saving to Firestore: $data")
+            firestore.collection("useful_links").add(data).await()
+            Log.d("UsefulLinks", "✅ Link saved successfully to Firestore")
+
+            _pendingStatus.value = OperationStatus.Success("Link added")
+            fetchUsefulLinks()
+        } catch (e: Exception) {
+            Log.e("UsefulLinks", "❌ Failed to add link: ${e.message}", e)
+            _pendingStatus.value = OperationStatus.Error(e.message ?: "Failed to add link")
+        }
+    }
+
+    private suspend fun uploadUsefulLinkApk(apkUri: Uri, entryName: String): String? = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val safeName = entryName.lowercase()
+                .replace(Regex("[^a-z0-9]+"), "_")
+                .ifBlank { "link" }
+            val fileName = "${safeName}_${System.currentTimeMillis()}_${UUID.randomUUID()}.apk"
+            val storageRef = FirebaseStorage.getInstance()
+                .reference
+                .child("useful_links/apks/$fileName")
+
+            storageRef.putFile(apkUri).await()
+            storageRef.downloadUrl.await().toString()
+        } catch (e: Exception) {
+            Log.e("UsefulLinks", "APK upload failed: ${e.message}", e)
+            null
+        }
+    }
+
+    private suspend fun uploadUsefulLinkIcon(imageUri: Uri, entryName: String): String? = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val safeName = entryName.lowercase()
+                .replace(Regex("[^a-z0-9]+"), "_")
+                .ifBlank { "link" }
+            val fileName = "${safeName}_${System.currentTimeMillis()}_${UUID.randomUUID()}.jpg"
+            val storageRef = FirebaseStorage.getInstance()
+                .reference
+                .child("useful_links/icons/$fileName")
+
+            storageRef.putFile(imageUri).await()
+            storageRef.downloadUrl.await().toString()
+        } catch (e: Exception) {
+            Log.e("UsefulLinks", "Icon upload failed: ${e.message}", e)
+            null
+        }
+    }
+
+    fun syncFirebaseToSheet() = viewModelScope.launch {
+        _firestoreToSheetStatus.value = OperationStatus.Loading
+        val result = syncRepository.syncFirestoreToSheet()
+        _firestoreToSheetStatus.value = result.fold(
+            onSuccess = { OperationStatus.Success(it) },
+            onFailure = { OperationStatus.Error(it.message ?: "Sync failed") }
+        )
+    }
+
+    fun syncSheetToFirebase() = viewModelScope.launch {
+        _sheetToFirestoreStatus.value = OperationStatus.Loading
+        val result = syncRepository.syncSheetToFirestore()
+        _sheetToFirestoreStatus.value = result.fold(
+            onSuccess = { 
+                // Refresh employees after successful sync
+                refreshEmployees()
+                OperationStatus.Success(it) 
+            },
+            onFailure = { OperationStatus.Error(it.message ?: "Sync failed") }
+        )
+    }
+    
+    private val _officersSyncStatus = MutableStateFlow<OperationStatus<String>>(OperationStatus.Idle)
+    val officersSyncStatus: StateFlow<OperationStatus<String>> = _officersSyncStatus.asStateFlow()
+    
+    fun syncOfficersSheetToFirebase() = viewModelScope.launch {
+        _officersSyncStatus.value = OperationStatus.Loading
+        val result = syncRepository.syncOfficersSheetToFirestore()
+        _officersSyncStatus.value = result.fold(
+            onSuccess = { 
+                refreshOfficers() // Refresh officers list after sync
+                OperationStatus.Success(it) 
+            },
+            onFailure = { OperationStatus.Error(it.message ?: "Sync failed") }
+        )
+    }
+    
+    fun resetOfficersSyncStatus() {
+        _officersSyncStatus.value = OperationStatus.Idle
+    }
+
+    fun resetFirestoreToSheetStatus() {
+        _firestoreToSheetStatus.value = OperationStatus.Idle
+    }
+
+    fun resetSheetToFirestoreStatus() {
+        _sheetToFirestoreStatus.value = OperationStatus.Idle
     }
 
     fun sendNotification(
@@ -1085,31 +1575,35 @@ open class EmployeeViewModel @Inject constructor(
         d: String? = null,
         s: String? = null
     ) = viewModelScope.launch {
-        val request = hashMapOf(
-            "title" to title,
-            "body" to body,
-            "targetType" to target.name,
-            "targetKgid" to k?.takeIf { it.isNotBlank() },
-            "targetDistrict" to d?.takeIf { it != "All" },
-            "targetStation" to s?.takeIf { it != "All" },
-            "timestamp" to System.currentTimeMillis(),
-            "requesterKgid" to (_currentUser.value?.kgid ?: "unknown")
-        )
+        try {
+            _pendingStatus.value = OperationStatus.Loading
+            
+            val request = hashMapOf(
+                "title" to title,
+                "body" to body,
+                "targetType" to target.name,
+                "targetKgid" to k?.takeIf { it.isNotBlank() },
+                "targetDistrict" to d?.takeIf { it != "All" },
+                "targetStation" to s?.takeIf { it != "All" },
+                "timestamp" to System.currentTimeMillis(),
+                "requesterKgid" to (_currentUser.value?.kgid ?: "unknown")
+            )
 
-        // ✅ Separate collection for admin notifications
-        val collectionName = if (target == NotificationTarget.ADMIN)
-            "admin_notifications"
-        else
-            "notifications_queue"
+            // ✅ Separate collection for admin notifications
+            val collectionName = if (target == NotificationTarget.ADMIN)
+                "admin_notifications"
+            else
+                "notifications_queue"
 
-        firestore.collection(collectionName)
-            .add(request)
-            .addOnSuccessListener {
-                _pendingStatus.value = OperationStatus.Success("Notification sent successfully.")
-            }
-            .addOnFailureListener { e ->
-                _pendingStatus.value = OperationStatus.Error("Failed: ${e.message}")
-            }
+            firestore.collection(collectionName)
+                .add(request)
+                .await()
+            
+            _pendingStatus.value = OperationStatus.Success("Notification sent successfully.")
+        } catch (e: Exception) {
+            Log.e("EmployeeViewModel", "Error sending notification", e)
+            _pendingStatus.value = OperationStatus.Error("Failed: ${e.message ?: "Unknown error"}")
+        }
     }
 
 
@@ -1141,6 +1635,10 @@ open class EmployeeViewModel @Inject constructor(
         _selectedStation.value = station
     }
 
+    fun updateSelectedRank(rank: String) {
+        _selectedRank.value = rank
+    }
+
     fun adjustFontScale(increase: Boolean) {
         val step = 0.1f
         val current = _fontScale.value
@@ -1158,16 +1656,36 @@ open class EmployeeViewModel @Inject constructor(
     // ADMIN CHECK
     // =========================================================
     fun checkIfAdmin() {
-        val user = auth.currentUser ?: run {
-            _isAdmin.value = false
-            return
-        }
         viewModelScope.launch {
             try {
-                val doc = firestore.collection("employees").document(user.uid).get().await()
-                _isAdmin.value = doc.exists() && (doc.getBoolean("isAdmin") == true)
+                // ✅ Use current user's email to check admin status (more reliable than uid)
+                val email = _currentUser.value?.email
+                if (email.isNullOrBlank()) {
+                    // Fallback to session email if currentUser is not set
+                    val sessionEmail = sessionManager.userEmail.first()
+                    if (sessionEmail.isNotBlank()) {
+                        val user = employeeRepo.getEmployeeByEmail(sessionEmail)
+                        _isAdmin.value = user?.isAdmin ?: false
+                        Log.d("AdminCheck", "✅ Admin status from session: ${user?.isAdmin}")
+                    } else {
+                        _isAdmin.value = false
+                    }
+                    return@launch
+                }
+                
+                // ✅ Check admin status from current user or refresh from repository
+                val currentUser = _currentUser.value
+                if (currentUser != null) {
+                    _isAdmin.value = currentUser.isAdmin
+                    Log.d("AdminCheck", "✅ Admin status from currentUser: ${currentUser.isAdmin}")
+                } else {
+                    // Refresh from repository
+                    val user = employeeRepo.getEmployeeByEmail(email)
+                    _isAdmin.value = user?.isAdmin ?: false
+                    Log.d("AdminCheck", "✅ Admin status from repository: ${user?.isAdmin}")
+                }
             } catch (e: Exception) {
-                Log.e("AdminCheck", "❌ Error: ${e.message}")
+                Log.e("AdminCheck", "❌ Error checking admin status: ${e.message}")
             }
         }
     }

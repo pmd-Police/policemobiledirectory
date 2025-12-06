@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8"/>
+    <script src="./kn.js"></script>
+</head>
+<body>
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        console.log("HTML loaded in WebView");
+        if (window.AndroidBridge && AndroidBridge.onError) {
+            AndroidBridge.onError("kn loaded? = " + (typeof kn));
+        }
+    });
+</script>
+
+<script>
+    function sendResult(text) {
+        if (window.AndroidBridge && AndroidBridge.onConverted) {
+            AndroidBridge.onConverted(text);
+        }
+    }
+
+    function sendError(msg) {
+        if (window.AndroidBridge && AndroidBridge.onError) {
+            AndroidBridge.onError(msg);
+        }
+    }
+
+    function convertAsciiToUnicode(text) {
+        try {
+            const out = kn.ascii_to_unicode(text, false, false);
+            sendResult(out);
+        } catch (e) {
+            sendError("A2U ERROR: " + e.toString());
+        }
+    }
+
+    function convertUnicodeToAscii(text) {
+        try {
+            const out = kn.unicode_to_ascii(text, false, false);
+            sendResult(out);
+        } catch (e) {
+            sendError("U2A ERROR: " + e.toString());
+        }
+    }
+</script>
+
+</body>
+</html>

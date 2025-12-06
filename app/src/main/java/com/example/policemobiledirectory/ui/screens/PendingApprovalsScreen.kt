@@ -84,7 +84,12 @@ fun PendingApprovalsScreen(
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = androidx.compose.ui.graphics.Color.White,
+                    navigationIconContentColor = androidx.compose.ui.graphics.Color.White
+                )
             )
         }
     ) { paddingValues ->
@@ -239,7 +244,7 @@ fun PendingApprovalCard(
             Text("Station: ${entity.station}")
             Text("Rank: ${entity.rank}")
             entity.metalNumber?.takeIf { it.isNotBlank() }?.let { Text("Metal No: $it") }
-            Text("Blood Group: ${entity.bloodGroup}")
+            Text("Blood Group: ${entity.bloodGroup ?: "??"}")
             Text("Registered On: ${formatDate(entity.createdAt, context)}")
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -321,6 +326,7 @@ private fun PendingRegistrationEditDialog(
                     isRegistration = false,
                     initialEmployee = editableEmployee,
                     initialKgid = entity.kgid,
+                    onNavigateToTerms = null,
                     onSubmit = { employee, photoUri ->
                         val updatedPending = entity.copy(
                             kgid = employee.kgid,

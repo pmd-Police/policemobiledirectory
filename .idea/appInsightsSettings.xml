@@ -6,14 +6,6 @@
         <entry key="Firebase Crashlytics">
           <value>
             <InsightsFilterSettings>
-              <option name="connection">
-                <ConnectionSetting>
-                  <option name="appId" value="com.example.policemobiledirectory" />
-                  <option name="mobileSdkAppId" value="1:603972083927:android:2b6c54fa29de5b0af29092" />
-                  <option name="projectId" value="pmd-police-mobile-directory" />
-                  <option name="projectNumber" value="603972083927" />
-                </ConnectionSetting>
-              </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />
               <option name="timeIntervalDays" value="THIRTY_DAYS" />
               <option name="visibilityType" value="ALL" />

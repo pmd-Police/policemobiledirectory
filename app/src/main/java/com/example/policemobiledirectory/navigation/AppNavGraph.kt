@@ -5,6 +5,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -119,11 +120,20 @@ private fun AppNavHostContent(
         }
 
         // --- USER REGISTRATION ---
-        composable(Routes.USER_REGISTRATION) {
+        composable(
+            route = "${Routes.USER_REGISTRATION}?email={email}",
+            arguments = listOf(
+                androidx.navigation.navArgument("email") {
+                    type = androidx.navigation.NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            val email = backStackEntry.arguments?.getString("email") ?: ""
             UserRegistrationScreen(
                 navController = navController,
                 viewModel = employeeViewModel,
-                initialEmail = ""
+                initialEmail = email
             )
         }
 
@@ -183,6 +193,11 @@ private fun AppNavHostContent(
             AddUsefulLinkScreen(navController = navController, viewModel = hiltViewModel())
         }
 
+        // --- UPLOAD DOCUMENT ---
+        composable(Routes.UPLOAD_DOCUMENT) {
+            UploadDocumentScreen(navController = navController)
+        }
+
         // --- ADD / EDIT EMPLOYEE ---
         composable(
             route = "${Routes.ADD_EMPLOYEE}?employeeId={employeeId}",
@@ -220,9 +235,14 @@ private fun AppNavHostContent(
             AboutScreen(navController = navController)
         }
 
+        // --- NUDI CONVERTER ---
+        composable(Routes.NUDI_CONVERTER) {
+            NudiConverterScreen(navController = navController)
+        }
+
         // --- MY PROFILE ---
         composable(Routes.MY_PROFILE) {
-            MyProfileEditScreen()
+            MyProfileEditScreen(navController = navController)
         }
 
         // --- NOTIFICATIONS ---
@@ -232,7 +252,16 @@ private fun AppNavHostContent(
 
         // --- Gallery Screen ---
         composable(Routes.GALLERY_SCREEN) {
-            GalleryScreen(navController = navController)
+            val isAdmin by employeeViewModel.isAdmin.collectAsStateWithLifecycle()
+            GalleryScreen(
+                navController = navController,
+                isAdmin = isAdmin
+            )
+        }
+
+        // --- Terms & Conditions ---
+        composable(Routes.TERMS_AND_CONDITIONS) {
+            TermsAndConditionsScreen(navController = navController)
         }
 
 

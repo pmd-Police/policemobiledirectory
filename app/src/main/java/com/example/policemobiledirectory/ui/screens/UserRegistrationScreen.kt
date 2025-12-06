@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.policemobiledirectory.data.local.PendingRegistrationEntity
+import com.example.policemobiledirectory.navigation.Routes
 import com.example.policemobiledirectory.ui.components.CommonEmployeeForm
 import com.example.policemobiledirectory.utils.OperationStatus
 import com.example.policemobiledirectory.viewmodel.AddEditEmployeeViewModel
@@ -76,14 +77,18 @@ fun UserRegistrationScreen(
         }
     }
 
-    Scaffold { padding ->
+    Scaffold { _ ->
         CommonEmployeeForm(
             isAdmin = false,
             isSelfEdit = false,
             isRegistration = true,
             initialEmployee = null,
             initialKgid = null,
+            initialEmail = initialEmail, // ✅ Prefill email from Google Sign-In
             onSubmit = { _, _ -> /* not used */ },
+            onNavigateToTerms = {
+                navController.navigate(Routes.TERMS_AND_CONDITIONS)
+            },
             onRegisterSubmit = { pending: PendingRegistrationEntity, photo: Uri? ->
                 scope.launch {
                     var finalPhotoUrl = pending.photoUrl

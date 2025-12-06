@@ -1,0 +1,41 @@
+QUICK FIX: Generate Stations CSV
+=================================
+
+The GOOGLE_SHEETS_STATIONS_CSV.csv file needs to be generated manually.
+
+SOLUTION 1: Run Python Script Directly
+---------------------------------------
+1. Open Command Prompt or PowerShell
+2. Navigate to project directory:
+   cd "c:\Users\ravip\AndroidStudioProjects\PoliceMobileDirectory"
+3. Run:
+   python generate_google_sheets_data.py
+4. Check for the file:
+   dir GOOGLE_SHEETS_STATIONS_CSV.csv
+
+SOLUTION 2: Manual Creation
+----------------------------
+If Python script doesn't work, the stations data is in:
+- File: generate_google_sheets_data.py
+- Variable: stations_by_district (line 18)
+- All 37 districts with their stations are defined there
+
+Format needed for CSV:
+- Header: District,Station
+- Each row: [District Name],[Station Name]
+- Example: Bagalkot,Amengad PS
+
+SOLUTION 3: Import from Constants.kt
+-------------------------------------
+The data matches Constants.kt file:
+- app/src/main/java/com/example/policemobiledirectory/utils/Constants.kt
+- Variable: stationsByDistrictMap (around line 34)
+
+You can extract the data from there manually.
+
+VERIFICATION
+------------
+After creation, the file should:
+- Have header: District,Station
+- Contain ~1000+ rows
+- Be ~50-100 KB in size

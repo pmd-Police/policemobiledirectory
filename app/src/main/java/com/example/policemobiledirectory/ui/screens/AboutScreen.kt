@@ -41,7 +41,9 @@ fun AboutScreen(navController: NavController) {
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = androidx.compose.ui.graphics.Color.White,
+                    navigationIconContentColor = androidx.compose.ui.graphics.Color.White
                 )
             )
         }
@@ -104,6 +106,7 @@ fun AboutScreen(navController: NavController) {
                     • Admin management tools  
                     • Notifications and approvals  
                     • Useful links and document uploads
+                    • Nudi Converter: ASCII to Unicode and Unicode to ASCII conversion with PDF and DOCX support
                 """.trimIndent(),
                 style = MaterialTheme.typography.bodyMedium,
                 lineHeight = 22.sp

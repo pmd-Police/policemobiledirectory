@@ -10,28 +10,27 @@ data class Employee(
     val name: String = "",
     val email: String = "",
     val pin: String? = null,
-    val mobile1: String? = null,
+    val mobile1: String? = null,   // STRING after migration
     val mobile2: String? = null,
-    val rank: String? = null,          // Rank replaces designation
-    val metalNumber: String? = null,   // Optional metal number
+    val rank: String? = null,
+    @get:PropertyName("metal")
+    @set:PropertyName("metal")
+    var metalNumber: String? = null,   // Firestore field: "metal" (matches Google Sheet column)
     val district: String? = null,
     val station: String? = null,
     val bloodGroup: String? = null,
     val photoUrl: String? = null,
-    val fcmToken: String? = null,
-
-    @get:PropertyName("isAdmin")
-    val isAdmin: Boolean = false,
-
-    // ✅ New field — approval status (admin controlled)
-    @get:PropertyName("isApproved")
-    val isApproved: Boolean = true,
-
-    val firebaseUid: String? = null,
     val photoUrlFromGoogle: String? = null,
-
+    val fcmToken: String? = null,
+    val firebaseUid: String? = null,
+    @get:PropertyName("isAdmin")
+    val isAdmin: Boolean = false,      // BOOLEAN after migration
+    @get:PropertyName("isApproved")
+    val isApproved: Boolean = true,    // BOOLEAN after migration
     @ServerTimestamp
-    val createdAt: Date? = null
+    val createdAt: Date? = null,       // TIMESTAMP after migration
+    @ServerTimestamp
+    val updatedAt: Date? = null        // TIMESTAMP after migration
 ) {
     // Computed property for display
     val displayRank: String

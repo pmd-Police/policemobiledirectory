@@ -30,18 +30,27 @@ import com.example.policemobiledirectory.repository.RepoResult
 import com.example.policemobiledirectory.utils.OperationStatus
 import com.example.policemobiledirectory.utils.Constants
 import com.example.policemobiledirectory.viewmodel.AddEditEmployeeViewModel
+import com.example.policemobiledirectory.viewmodel.ConstantsViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddEmployeeScreen(
     navController: NavController,
     employeeId: String?,
-    viewModel: AddEditEmployeeViewModel = hiltViewModel()
+    viewModel: AddEditEmployeeViewModel = hiltViewModel(),
+    constantsViewModel: ConstantsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val employee by viewModel.employee.collectAsState()
     val saveStatus by viewModel.saveStatus.collectAsState()
     val photoStatus by viewModel.photoUploadStatus.collectAsState()
+    
+    // Get constants from ViewModel
+    val ranks by constantsViewModel.ranks.collectAsStateWithLifecycle()
+    val districts by constantsViewModel.districts.collectAsStateWithLifecycle()
+    val stationsByDistrict by constantsViewModel.stationsByDistrict.collectAsStateWithLifecycle()
+    val bloodGroups by constantsViewModel.bloodGroups.collectAsStateWithLifecycle()
 
     var name by remember { mutableStateOf("") }
     var kgid by remember { mutableStateOf("") }
@@ -104,17 +113,34 @@ fun AddEmployeeScreen(
             }
 
             item { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = kgid, onValueChange = { kgid = it }, label = { Text("KGID") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(), readOnly = isEditMode) }
+            item { OutlinedTextField(value = kgid, onValueChange = { kgid = it.filter { ch -> ch.isDigit() } }, label = { Text("KGID") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(), readOnly = isEditMode) }
             item { OutlinedTextField(value = mobile1, onValueChange = { mobile1 = it }, label = { Text("Mobile 1") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth()) }
             item { OutlinedTextField(value = mobile2, onValueChange = { mobile2 = it }, label = { Text("Mobile 2 (Optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth()) }
 
             // Dropdowns
-            item { CustomDropdownMenu(label = "Rank", selectedOption = rank, options = Constants.allRanksList, onOptionSelected = { rank = it }) }
-            item { CustomDropdownMenu(label = "Blood Group", selectedOption = bloodGroup, options = Constants.bloodGroupsList, onOptionSelected = { bloodGroup = it }) }
-            item { CustomDropdownMenu(label = "District", selectedOption = district, options = Constants.districtsList, onOptionSelected = { district = it; station = "" }) } // Reset station on district change
+            item { CustomDropdownMenu(label = "Rank", selectedOption = rank, options = ranks, onOptionSelected = { rank = it }) }
+            item { CustomDropdownMenu(label = "Blood Group", selectedOption = bloodGroup, options = bloodGroups, onOptionSelected = { bloodGroup = it }) }
+            item { CustomDropdownMenu(label = "District", selectedOption = district, options = districts, onOptionSelected = { district = it; station = "" }) } // Reset station on district change
 
-            val stationOptions = if(district.isNotEmpty()) Constants.stationsByDistrictMap[district] ?: emptyList() else emptyList()
-            item { CustomDropdownMenu(label = "Station", selectedOption = station, options = stationOptions, onOptionSelected = { station = it }, enabled = stationOptions.isNotEmpty()) }
+            item {
+                val stationOptions = remember(district, stationsByDistrict) {
+                    if (district.isNotEmpty()) {
+                        // Try exact match first, then case-insensitive match
+                        stationsByDistrict[district]
+                            ?: stationsByDistrict.keys.find { it.equals(district, ignoreCase = true) }?.let { stationsByDistrict[it] }
+                            ?: emptyList()
+                    } else {
+                        emptyList()
+                    }
+                }
+                CustomDropdownMenu(
+                    label = "Station",
+                    selectedOption = station,
+                    options = stationOptions,
+                    onOptionSelected = { station = it },
+                    enabled = stationOptions.isNotEmpty()
+                )
+            }
 
 
             item {

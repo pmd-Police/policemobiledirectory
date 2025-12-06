@@ -8,6 +8,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
 import com.example.policemobiledirectory.model.Employee
 import com.example.policemobiledirectory.repository.RepoResult
 import com.example.policemobiledirectory.ui.components.CommonEmployeeForm
@@ -16,6 +17,7 @@ import com.example.policemobiledirectory.viewmodel.EmployeeViewModel
 
 @Composable
 fun MyProfileEditScreen(
+    navController: NavController? = null,
     employeeViewModel: EmployeeViewModel = hiltViewModel(),
     addEditViewModel: AddEditEmployeeViewModel = hiltViewModel()
 ) {
@@ -40,7 +42,11 @@ fun MyProfileEditScreen(
                     Toast.LENGTH_SHORT
                 ).show()
                 addEditViewModel.resetSaveStatus()
+                // ✅ Refresh current user to show updated data (including metal number)
+                employeeViewModel.refreshCurrentUser()
                 employeeViewModel.refreshEmployees()
+                // ✅ Navigate back after successful save
+                navController?.popBackStack()
             }
             is RepoResult.Error -> {
                 android.util.Log.e("MyProfileScreen", "❌❌❌ ERROR RECEIVED!")
@@ -74,6 +80,7 @@ fun MyProfileEditScreen(
         isSelfEdit = true,
         isRegistration = false,
         initialEmployee = currentEmployee,
+        onNavigateToTerms = null,
         onSubmit = { emp: Employee, photo: Uri? ->
             android.util.Log.e("MyProfileScreen", "═══════════════════════════════════════")
             android.util.Log.e("MyProfileScreen", "📤📤📤 onSubmit CALLBACK INVOKED! 📤📤📤")

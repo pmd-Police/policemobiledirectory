@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
@@ -76,36 +78,111 @@ fun NavigationDrawer(
                         .padding(vertical = 26.dp, horizontal = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    val painter = rememberAsyncImagePainter(
-                        ImageRequest.Builder(context)
-                            .data(currentUser?.photoUrl)
-                            .placeholder(R.drawable.officer)
-                            .error(R.drawable.officer)
-                            .crossfade(true)
-                            .scale(Scale.FILL)
-                            .build()
-                    )
+                    // Profile Image with Blood Group in top right corner
+                    Box(
+                        modifier = Modifier.size(90.dp),
+                        contentAlignment = Alignment.TopEnd
+                    ) {
+                        val painter = rememberAsyncImagePainter(
+                            ImageRequest.Builder(context)
+                                .data(currentUser?.photoUrl)
+                                .placeholder(R.drawable.officer)
+                                .error(R.drawable.officer)
+                                .crossfade(true)
+                                .scale(Scale.FILL)
+                                .build()
+                        )
 
-                    Image(
-                        painter = painter,
-                        contentDescription = "Profile photo",
-                        modifier = Modifier
-                            .size(90.dp)
-                            .clip(CircleShape)
-                    )
+                        Image(
+                            painter = painter,
+                            contentDescription = "Profile photo",
+                            modifier = Modifier
+                                .size(90.dp)
+                                .clip(CircleShape)
+                        )
+                        
+                        // Blood Group badge in top right corner
+                        currentUser?.bloodGroup?.takeIf { it.isNotBlank() }?.let { bg ->
+                            // Format blood group: show "??" as-is, otherwise format normally
+                            val formattedBg = if (bg.trim() == "??") {
+                                "??"
+                            } else {
+                                bg.uppercase()
+                                    .replace("POSITIVE", "+")
+                                    .replace("NEGATIVE", "–")
+                                    .replace("VE", "")
+                                    .replace("(", "")
+                                    .replace(")", "")
+                                    .trim()
+                                    .let { clean ->
+                                        when (clean) {
+                                            "A" -> "A+"
+                                            "B" -> "B+"
+                                            "O" -> "O+"
+                                            "AB" -> "AB+"
+                                            "A-" -> "A–"
+                                            "B-" -> "B–"
+                                            "O-" -> "O–"
+                                            "AB-" -> "AB–"
+                                            else -> clean
+                                        }
+                                    }
+                            }
+                            Surface(
+                                color = MaterialTheme.colorScheme.error,
+                                shape = CircleShape,
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .offset(x = 4.dp, y = (-4).dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Text(
+                                        text = formattedBg,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
+                    
+                    // Name with Rank
                     Text(
-                        text = currentUser?.name ?: "",
+                        text = buildString {
+                            append(currentUser?.name ?: "")
+                            currentUser?.displayRank?.takeIf { it.isNotBlank() }?.let { rank ->
+                                append(" ($rank)")
+                            }
+                        },
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
                     )
+                    
+                    // KGID
                     Text(
                         text = currentUser?.kgid?.let { "KGID: $it" } ?: "",
                         style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.9f))
                     )
+                    
+                    // Station below KGID
+                    currentUser?.station?.takeIf { it.isNotBlank() }?.let { station ->
+                        Text(
+                            text = station,
+                            style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.9f))
+                        )
+                    }
+                    
+                    // Email
                     Text(
                         text = currentUser?.email ?: "",
                         style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.8f))
@@ -156,6 +233,18 @@ fun NavigationDrawer(
                         }
                     )
                 }
+
+                DrawerItem(
+                    icon = Icons.Default.Translate,
+                    text = "Nudi Converter",
+                    selected = currentRoute == Routes.NUDI_CONVERTER,
+                    onClick = {
+                        scope.launch {
+                            drawerState.close()
+                            navController.navigate(Routes.NUDI_CONVERTER)
+                        }
+                    }
+                )
 
                 DrawerItem(
                     icon = Icons.Default.Info,

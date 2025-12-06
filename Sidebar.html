@@ -1,0 +1,226 @@
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <base target="_top">
+                <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+                <style>
+                  body { font-family: "Segoe UI", Roboto, sans-serif; background: #f0f2f5; margin: 0; padding: 10px; }
+                  
+                  /* Card Styling */
+                  .card { 
+                    background: white; 
+                    padding: 15px; 
+                    margin-bottom: 15px; 
+                    border-radius: 8px; 
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+                    border: 1px solid #e1e4e8;
+                  }
+
+                  /* Buttons */
+                  .btn { 
+                    width: 100%; 
+                    padding: 12px; 
+                    background: #1a73e8; 
+                    color: white; 
+                    border: none; 
+                    border-radius: 6px; 
+                    cursor: pointer; 
+                    font-weight: 600; 
+                    font-size: 14px;
+                    transition: background 0.2s;
+                  }
+                  .btn:hover { background: #1557b0; }
+                  .btn:disabled { background: #ccc; cursor: not-allowed; }
+                  .btn.red { background: #d93025; margin-top: 10px; }
+                  .btn.red:hover { background: #b0271f; }
+
+                  /* Inputs */
+                  input { 
+                    width: 100%; 
+                    padding: 10px; 
+                    margin-bottom: 10px; 
+                    box-sizing: border-box; 
+                    border: 1px solid #ccc; 
+                    border-radius: 4px; 
+                  }
+
+                  /* Progress Bar */
+                  .progress-track { height: 6px; background: #eee; border-radius: 3px; margin-top: 15px; overflow: hidden; }
+                  .progress-fill { height: 100%; background: #1a73e8; width: 0%; transition: width 0.5s ease; }
+
+                  /* Stats Box */
+                  .stats-box { background: #f8f9fa; padding: 10px; border-radius: 6px; font-size: 13px; color: #333; }
+                  .stat-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+                  .lbl { color: #5f6368; }
+                  .val { font-weight: 600; }
+                </style>
+              </head>
+              <body>
+
+                <div class="card">
+                  <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #202124;">Sync Tools</h3>
+                  
+                  <button id="btnSync" class="btn" onclick="handleSyncClick()">
+                    Start Batch Sync (2-Way)
+                  </button>
+                  
+                  <div class="progress-track">
+                    <div id="pBar" class="progress-fill"></div>
+                  </div>
+                  
+                  <div id="statusText" style="font-size: 12px; margin-top: 8px; color: #666; text-align: center;">
+                    Idle
+                  </div>
+                </div>
+
+                <div class="card stats-box">
+                  <div class="stat-row">
+                    <span class="lbl">Total Rows:</span>
+                    <span class="val" id="statTotal">-</span>
+                  </div>
+                  <div class="stat-row">
+                    <span class="lbl" style="color:#137333;">Active:</span>
+                    <span class="val" id="statActive">-</span>
+                  </div>
+                  <div class="stat-row">
+                    <span class="lbl" style="color:#c5221f;">Pending Delete:</span>
+                    <span class="val" id="statDeleted">-</span>
+                  </div>
+                  <div style="margin-top: 8px; border-top: 1px solid #eee; padding-top: 5px; text-align: right; font-size: 11px; color: #888;">
+                    Last Check: <span id="statTime">--:--</span>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <h3 style="margin: 0 0 10px 0; font-size: 16px;">Soft Delete</h3>
+                  <input id="delKgid" placeholder="Enter KGID">
+                  <button class="btn red" onclick="handleDeleteClick()">Delete Employee</button>
+                </div>
+
+                <script>
+                  let pollInterval = null;
+
+                  // --- 1. HANDLE SYNC CLICK ---
+                  function handleSyncClick() {
+                    // Immediate Visual Feedback
+                    document.getElementById('btnSync').disabled = true;
+                    document.getElementById('btnSync').innerText = "Starting...";
+                    document.getElementById('statusText').innerText = "Initializing connection...";
+
+                    // Call Backend
+                    google.script.run
+                      .withSuccessHandler(onSyncStarted)
+                      .withFailureHandler(onFailure)
+                      .sidebar_startTwoWayBatch();
+                  }
+
+                  function onSyncStarted(response) {
+                    if (response && response.success) {
+                      document.getElementById('statusText').innerText = "Sync process started...";
+                      startPolling(); // Start watching progress
+                    } else {
+                      onFailure(response ? response.error : "Unknown error");
+                    }
+                  }
+
+                  // --- 2. POLL STATUS EVERY 2 SECONDS ---
+                  function startPolling() {
+                    if (pollInterval) clearInterval(pollInterval);
+                    pollInterval = setInterval(checkStatus, 2000);
+                  }
+
+                  function checkStatus() {
+                    google.script.run
+                      .withSuccessHandler(updateDisplay)
+                      .withFailureHandler(err => console.log("Poll error: " + err))
+                      .sidebar_getBatchStatus();
+                  }
+
+                  // --- 3. UPDATE UI ---
+                  function updateDisplay(status) {
+                    if (!status) return;
+
+                    // Update Text & Bar
+                    const txt = document.getElementById('statusText');
+                    const bar = document.getElementById('pBar');
+                    const btn = document.getElementById('btnSync');
+
+                    if (status.mode === "Idle") {
+                      txt.innerText = "Idle";
+                      bar.style.width = "0%";
+                      btn.disabled = false;
+                      btn.innerText = "Start Batch Sync (2-Way)";
+                      if (pollInterval && status.progress === 0) clearInterval(pollInterval); // Stop polling if truly idle
+                    } 
+                    else {
+                      // Sync is running
+                      btn.disabled = true;
+                      btn.innerText = "Syncing...";
+                      txt.innerText = "Mode: " + status.mode;
+                      
+                      if (status.progress >= 100) {
+                        bar.style.width = "100%";
+                        txt.innerText = "Sync Complete ✓";
+                        txt.style.color = "green";
+                        // Re-enable button after 3 seconds
+                        setTimeout(() => { 
+                          btn.disabled = false; 
+                          btn.innerText = "Start Batch Sync (2-Way)";
+                          txt.style.color = "#666";
+                        }, 3000);
+                      } else {
+                        bar.style.width = status.progress + "%";
+                      }
+                    }
+
+                    // Update Stats
+                    document.getElementById('statTotal').innerText   = status.total || 0;
+                    document.getElementById('statActive').innerText  = status.active || 0;
+                    document.getElementById('statDeleted').innerText = status.deleted || 0;
+                    document.getElementById('statTime').innerText    = status.lastSync || "--:--";
+                  }
+
+                  // --- 4. HANDLE DELETE ---
+                  function handleDeleteClick() {
+                    const kgid = document.getElementById('delKgid').value;
+                    if (!kgid) return alert("Please enter a KGID");
+                    
+                    if (!confirm("Are you sure you want to delete KGID " + kgid + "?")) return;
+
+                    google.script.run
+                      .withSuccessHandler(res => {
+                        if (res) {
+                          alert("Success: Employee marked as deleted.");
+                          document.getElementById('delKgid').value = "";
+                          checkStatus(); // Refresh stats immediately
+                        } else {
+                          alert("Error: KGID not found in sheet.");
+                        }
+                      })
+                      .withFailureHandler(onFailure)
+                      .sidebar_softDeleteKgid(kgid);
+                  }
+
+                  // --- 5. ERROR HANDLER ---
+                  function onFailure(err) {
+                    alert("Error: " + err);
+                    document.getElementById('btnSync').disabled = false;
+                    document.getElementById('btnSync').innerText = "Start Batch Sync (2-Way)";
+                    document.getElementById('statusText').innerText = "Failed";
+                  }
+                  
+                  // Check status on load
+                  window.onload = checkStatus;
+
+                </script>
+              </body>
+              </html>
+
+
+              https://script.google.com/home/projects/1rAB4YmvtrR5ElbZAQwjsGeaxxEd2D4K1pQxq5jPSHyeOwzrLQ86lFgRG/edit
+
+
+
+
+
+

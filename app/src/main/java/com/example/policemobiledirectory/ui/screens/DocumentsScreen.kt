@@ -6,7 +6,6 @@ import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.util.Base64
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -32,10 +31,8 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.rememberAsyncImagePainter
 import com.example.policemobiledirectory.model.Document
 import com.example.policemobiledirectory.ui.viewmodel.DocumentsViewModel
-import kotlinx.coroutines.Dispatchers
+import com.example.policemobiledirectory.utils.OperationStatus
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.InputStream
 import androidx.navigation.NavController
 import androidx.compose.material3.TopAppBar
 
@@ -50,10 +47,9 @@ fun DocumentsScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     val documents by viewModel.documents.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val error by viewModel.error.collectAsState()
-    val deleteSuccess by viewModel.deleteSuccess.collectAsState()
-    val uploadSuccess by viewModel.uploadSuccess.collectAsState()
+    val documentsStatus by viewModel.documentsStatus.collectAsState()
+    val uploadStatus by viewModel.uploadStatus.collectAsState()
+    val deleteStatus by viewModel.deleteStatus.collectAsState()
 
     var showDeleteConfirm by remember { mutableStateOf<String?>(null) }
     var showUploadDialog by remember { mutableStateOf(false) }
@@ -73,17 +69,33 @@ fun DocumentsScreen(
         }
     }
 
-    LaunchedEffect(deleteSuccess) {
-        deleteSuccess?.let {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-            viewModel.clearMessages()
+    // Handle delete status
+    LaunchedEffect(deleteStatus) {
+        when (val status = deleteStatus) {
+            is OperationStatus.Success -> {
+                Toast.makeText(context, status.data ?: "Document deleted successfully", Toast.LENGTH_SHORT).show()
+                viewModel.clearStatus()
+            }
+            is OperationStatus.Error -> {
+                Toast.makeText(context, status.message, Toast.LENGTH_SHORT).show()
+                viewModel.clearStatus()
+            }
+            else -> {}
         }
     }
 
-    LaunchedEffect(uploadSuccess) {
-        uploadSuccess?.let {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-            viewModel.clearMessages()
+    // Handle upload status
+    LaunchedEffect(uploadStatus) {
+        when (val status = uploadStatus) {
+            is OperationStatus.Success -> {
+                Toast.makeText(context, status.data ?: "Document uploaded successfully", Toast.LENGTH_SHORT).show()
+                viewModel.clearStatus()
+            }
+            is OperationStatus.Error -> {
+                Toast.makeText(context, status.message, Toast.LENGTH_SHORT).show()
+                viewModel.clearStatus()
+            }
+            else -> {}
         }
     }
 
@@ -96,8 +108,14 @@ fun DocumentsScreen(
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = androidx.compose.ui.graphics.Color.White,
+                    navigationIconContentColor = androidx.compose.ui.graphics.Color.White,
+                    actionIconContentColor = androidx.compose.ui.graphics.Color.White
+                ),
                 actions = {
-                    IconButton(onClick = { viewModel.fetchDocuments() }) {
+                    IconButton(onClick = { viewModel.fetchDocuments(forceRefresh = true) }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                 }
@@ -131,59 +149,67 @@ fun DocumentsScreen(
                     singleLine = true
                 )
 
-                when {
-                    isLoading -> Box(
+                val currentStatus = documentsStatus
+                when (currentStatus) {
+                    is OperationStatus.Loading -> Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) { CircularProgressIndicator() }
 
-                    error != null -> ErrorSection(error!!, onRetry = { viewModel.fetchDocuments() })
+                    is OperationStatus.Error -> ErrorSection(
+                        currentStatus.message,
+                        onRetry = { viewModel.fetchDocuments(forceRefresh = true) }
+                    )
 
-                    filteredDocs.isEmpty() -> EmptySection()
+                    is OperationStatus.Success -> {
+                        if (filteredDocs.isEmpty()) {
+                            EmptySection(message = "No documents found")
+                        } else {
 
-                    else -> LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(filteredDocs) { doc ->
-                            DocumentItem(
-                                doc = doc,
-                                isAdmin = isAdmin,
-                                onViewClick = {
-                                    previewUrl = doc.url
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(filteredDocs) { doc ->
+                                    DocumentItem(
+                                        doc = doc,
+                                        isAdmin = isAdmin,
+                                        onViewClick = {
+                                            previewUrl = doc.url
 
-                                    // Smarter MIME detection
-                                    previewMimeType = when {
-                                        doc.url.contains(".pdf", ignoreCase = true) ||
-                                                doc.url.contains("drive.google.com", ignoreCase = true) -> "application/pdf"
+                                            // Smarter MIME detection
+                                            previewMimeType = when {
+                                                doc.url.contains(".pdf", ignoreCase = true) ||
+                                                        doc.url.contains("drive.google.com", ignoreCase = true) -> "application/pdf"
 
-                                        doc.url.contains(".jpg", ignoreCase = true) ||
-                                                doc.url.contains(".jpeg", ignoreCase = true) -> "image/jpeg"
+                                                doc.url.contains(".jpg", ignoreCase = true) ||
+                                                        doc.url.contains(".jpeg", ignoreCase = true) -> "image/jpeg"
 
-                                        doc.url.contains(".png", ignoreCase = true) -> "image/png"
+                                                doc.url.contains(".png", ignoreCase = true) -> "image/png"
 
-                                        doc.url.contains(".doc", ignoreCase = true) ||
-                                                doc.url.contains(".docx", ignoreCase = true) -> "application/msword"
+                                                doc.url.contains(".doc", ignoreCase = true) ||
+                                                        doc.url.contains(".docx", ignoreCase = true) -> "application/msword"
 
-                                        doc.url.contains(".xls", ignoreCase = true) ||
-                                                doc.url.contains(".xlsx", ignoreCase = true) -> "application/vnd.ms-excel"
+                                                doc.url.contains(".xls", ignoreCase = true) ||
+                                                        doc.url.contains(".xlsx", ignoreCase = true) -> "application/vnd.ms-excel"
 
-                                        doc.url.contains(".ppt", ignoreCase = true) ||
-                                                doc.url.contains(".pptx", ignoreCase = true) -> "application/vnd.ms-powerpoint"
+                                                doc.url.contains(".ppt", ignoreCase = true) ||
+                                                        doc.url.contains(".pptx", ignoreCase = true) -> "application/vnd.ms-powerpoint"
 
-                                        else -> "application/octet-stream"
-                                    }
-                                },
+                                                else -> "application/octet-stream"
+                                            }
+                                        },
 
-                                onDownloadClick = { scope.launch { downloadFile(context, doc.url, doc.title) } },
-                                onDeleteClick = { showDeleteConfirm = doc.title }
-                            )
-
-
+                                        onDownloadClick = { scope.launch { downloadFile(context, doc.url, doc.title) } },
+                                        onDeleteClick = { showDeleteConfirm = doc.title }
+                                    )
+                                }
+                            }
                         }
                     }
+                    is OperationStatus.Idle -> EmptySection(message = "No documents loaded")
                 }
             }
 
@@ -241,33 +267,6 @@ fun DocumentsScreen(
     }
 }
 
-@Composable
-fun ErrorSection(error: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(Icons.Default.ErrorOutline, contentDescription = null, modifier = Modifier.size(48.dp))
-        Spacer(Modifier.height(12.dp))
-        Text("Failed to load: $error", style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(12.dp))
-        Button(onClick = onRetry) { Text("Retry") }
-    }
-}
-
-@Composable
-fun EmptySection() {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(48.dp))
-        Spacer(Modifier.height(12.dp))
-        Text("No documents found", style = MaterialTheme.typography.bodyMedium)
-    }
-}
 
 @Composable
 fun DocumentItem(
@@ -281,29 +280,65 @@ fun DocumentItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onViewClick() },
-        elevation = CardDefaults.cardElevation(4.dp),
+        elevation = CardDefaults.cardElevation(2.dp),
         colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(
+            Modifier
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Description, contentDescription = null)
-                    Spacer(Modifier.width(12.dp))
-                    Text(doc.title, fontWeight = FontWeight.Medium)
+                    Icon(
+                        Icons.Default.Description,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        doc.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
-                Row {
-                    IconButton(onClick = onViewClick) { Icon(Icons.Default.Visibility, null) }
-                    IconButton(onClick = onDownloadClick) { Icon(Icons.Default.FileDownload, null) }
-                    if (isAdmin) IconButton(onClick = onDeleteClick) { Icon(Icons.Default.Delete, null) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    fun Modifier.compactIcon() = size(36.dp)
+                    IconButton(onClick = onViewClick, modifier = Modifier.compactIcon()) {
+                        Icon(
+                            Icons.Default.Visibility,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(onClick = onDownloadClick, modifier = Modifier.compactIcon()) {
+                        Icon(
+                            Icons.Default.FileDownload,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    if (isAdmin) {
+                        IconButton(onClick = onDeleteClick, modifier = Modifier.compactIcon()) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            doc.category?.let { Text("Category: $it", style = MaterialTheme.typography.bodySmall) }
-            doc.description?.let { Text("Description: $it", style = MaterialTheme.typography.bodySmall) }
+            doc.category?.let {
+                Text("Category: $it", style = MaterialTheme.typography.bodySmall)
+            }
+            doc.description?.let {
+                Text("Description: $it", style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
@@ -338,6 +373,9 @@ fun FullscreenPreviewDialog(
                             Icon(Icons.Default.ArrowBack, contentDescription = "Close")
                         }
                     },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
                     actions = {
                         IconButton(onClick = { downloadFile(context, url, "Document") }) {
                             Icon(Icons.Default.FileDownload, contentDescription = "Download")
@@ -516,14 +554,3 @@ fun UploadDocumentDialog(
     )
 }
 
-suspend fun uriToBase64(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
-    try {
-        val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-        val bytes = inputStream?.readBytes()
-        inputStream?.close()
-        bytes?.let { Base64.encodeToString(it, Base64.NO_WRAP) }
-    } catch (e: Exception) {
-        e.printStackTrace()
-        null
-    }
-}

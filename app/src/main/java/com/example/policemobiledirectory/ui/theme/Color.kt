@@ -49,17 +49,109 @@ val VibrantIndigo = Color(0xFF3F51B5)    // Bright indigo
 val VibrantLime = Color(0xFFCDDC39)      // Bright lime
 val VibrantCyan = Color(0xFF00BCD4)      // Bright cyan
 
-// Gradient colors for employee cards
-val GradientStartBlue = Color(0xFF2196F3)
-val GradientEndBlue = Color(0xFF21CBF3)
-val GradientStartGreen = Color(0xFF4CAF50)
-val GradientEndGreen = Color(0xFF8BC34A)
-val GradientStartPurple = Color(0xFF9C27B0)
-val GradientEndPurple = Color(0xFFE91E63)
-val GradientStartOrange = Color(0xFFFF9800)
-val GradientEndOrange = Color(0xFFFFC107)
-val GradientStartTeal = Color(0xFF00BCD4)
-val GradientEndTeal = Color(0xFF4DB6AC)
+// Calm gradient colors for employee cards (from color palette)
+// PRIMARY GRADIENT colors
+val CalmSkyBlue = Color(0xFF8EC5FC)
+val CalmSoftBlue = Color(0xFFA9C9FF)
+val CalmPeriwinkle = Color(0xFFDAD4EC)
+
+// ACCENT COLORS
+val CalmRoyalBlue = Color(0xFF4A6CF7)
+val CalmIndigo = Color(0xFF5B4EFA)
+val CalmAquaTeal = Color(0xFF4BC0C8)
+val CalmMint = Color(0xFFC7F5FF)
+
+// POLICE THEME colors
+val CalmNavyBlue = Color(0xFF1F2A6B)
+val CalmRoyalBlueDark = Color(0xFF244B9E)
+val CalmGold = Color(0xFFFFD700)
+
+// ============================================
+// SOCIAL NETWORK THEME COLOR PALETTE
+// Based on provided design reference
+// ============================================
+
+// Primary Color - Teal/Turquoise (Dominant)
+val PrimaryTeal = Color(0xFF00BCD4)        // Vibrant teal for top bars, buttons
+val PrimaryTealDark = Color(0xFF0097A7)     // Darker teal for gradients
+val PrimaryTealLight = Color(0xFF4DD0E1)    // Lighter teal for highlights
+
+// Secondary Color - Soft Yellow/Gold
+val SecondaryYellow = Color(0xFFFFC107)     // Soft yellow for secondary buttons
+val SecondaryYellowDark = Color(0xFFFFA000) // Darker yellow
+val SecondaryYellowLight = Color(0xFFFFEB3B) // Lighter yellow
+
+// Background Colors
+val BackgroundLight = Color(0xFFF5F5F5)     // Light off-white / pale grey-green background
+val BackgroundWhite = Color(0xFFFFFFFF)   // Pure white for cards
+val BackgroundCard = Color(0xFFFFFFFF)     // White card background
+
+// Text Colors
+val TextPrimary = Color(0xFF212121)        // Dark grey for primary text
+val TextSecondary = Color(0xFF757575)       // Light grey for secondary/placeholder text
+val TextOnTeal = Color(0xFFFFFFFF)          // White text on teal backgrounds
+val TextOnYellow = Color(0xFFFFFFFF)        // White text on yellow backgrounds
+
+// Border & Divider Colors
+val BorderLight = Color(0xFFE0E0E0)         // Light grey borders
+val BorderTeal = Color(0xFF00BCD4)         // Teal border for active/focused
+val DividerColor = Color(0xFFBDBDBD)        // Divider color
+
+// Status Colors
+val SuccessGreen = Color(0xFF4CAF50)
+val WarningYellow = Color(0xFFFFC107)
+val ErrorRed = Color(0xFFE53935)
+
+// Shadow Colors
+val CardShadow = Color(0x22000000)          // #00000022 - soft shadow
+val CardShadowLight = Color(0x11000000)     // Lighter shadow
+
+// Glassmorphism (keeping for compatibility)
+val GlassOpacity = 0.92f
+
+// Border Colors (for compatibility)
+val BorderLightPurple = BorderTeal          // Use teal instead of purple
+val BorderChipUnselected = BorderLight
+
+// Chip Colors
+val ChipSelectedStart = PrimaryTeal
+val ChipSelectedEnd = PrimaryTealLight
+val ChipUnselected = BackgroundWhite
+
+// Employee Card Gradients (Teal theme)
+// Upper cards: Light teal gradient
+val CardGradientUpperStart = Color(0xFFB2EBF2)  // Very light teal
+val CardGradientUpperEnd = Color(0xFF80DEEA)    // Light teal
+
+// Lower cards: Teal to cyan gradient
+val CardGradientLowerStart = Color(0xFF4DD0E1)  // Light teal
+val CardGradientLowerEnd = Color(0xFF26C6DA)    // Medium teal
+
+// Gradient pairs for employee cards
+val GradientStartBlue = CardGradientUpperStart
+val GradientEndBlue = CardGradientUpperEnd
+val GradientStartGreen = CardGradientLowerStart
+val GradientEndGreen = CardGradientLowerEnd
+val GradientStartPurple = CardGradientUpperStart
+val GradientEndPurple = CardGradientUpperEnd
+val GradientStartOrange = CardGradientLowerStart
+val GradientEndOrange = CardGradientLowerEnd
+val GradientStartTeal = CardGradientUpperStart
+val GradientEndTeal = CardGradientUpperEnd
+
+// Bottom Navigation
+val BottomNavStart = PrimaryTeal
+val BottomNavEnd = PrimaryTealDark
+
+// FAB Color
+val FABColor = PrimaryTeal
+
+// Legacy compatibility (mapping to new colors)
+val DeepRoyalPurple = PrimaryTeal
+val BrightViolet = PrimaryTealLight
+val AquaBlue = PrimaryTeal
+val SoftPink = SecondaryYellowLight
+// ErrorRed is already defined above in Status Colors section
 
 // Card accent colors
 val CardAccentGold = Color(0xFFFFD700)

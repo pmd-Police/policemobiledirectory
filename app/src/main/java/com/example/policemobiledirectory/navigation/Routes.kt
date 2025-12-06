@@ -29,5 +29,7 @@ object Routes {
     const val NOTIFICATIONS = "notifications"
 
     const val GALLERY_SCREEN = "gallery_screen"
+    const val TERMS_AND_CONDITIONS = "terms_and_conditions"
+    const val NUDI_CONVERTER = "nudi_converter"
 
 }
