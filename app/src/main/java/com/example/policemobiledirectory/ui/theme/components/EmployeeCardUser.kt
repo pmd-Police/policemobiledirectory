@@ -18,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -30,7 +29,6 @@ import com.example.policemobiledirectory.R
 import com.example.policemobiledirectory.model.Employee
 import com.example.policemobiledirectory.ui.theme.*
 import com.example.policemobiledirectory.utils.IntentUtils
-import kotlin.math.absoluteValue
 
 @Composable
 fun EmployeeCardUser(
@@ -39,15 +37,6 @@ fun EmployeeCardUser(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val gradientColors = listOf(
-        GradientStartBlue to GradientEndBlue,
-        GradientStartGreen to GradientEndBlue,
-        GradientStartPurple to GradientEndPurple,
-        GradientStartOrange to GradientEndOrange,
-        GradientStartTeal to GradientEndTeal
-    )
-    val colorIndex = (employee.kgid ?: "").hashCode().absoluteValue % gradientColors.size
-    val (startColor, endColor) = gradientColors[colorIndex]
 
     Card(
         modifier = Modifier
@@ -66,8 +55,9 @@ fun EmployeeCardUser(
     ) {
         Box(
             modifier = Modifier.background(
-                brush = Brush.linearGradient(listOf(startColor, endColor)),
-                alpha = com.example.policemobiledirectory.ui.theme.GlassOpacity
+                color = com.example.policemobiledirectory.ui.theme.EmployeeCardBackground.copy(
+                    alpha = com.example.policemobiledirectory.ui.theme.GlassOpacity
+                )
             )
         ) {
             // 🔹 Blood Group badge in red circle at top right corner of card

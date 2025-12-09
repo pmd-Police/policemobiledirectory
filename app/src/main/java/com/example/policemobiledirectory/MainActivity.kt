@@ -122,8 +122,8 @@ class MainActivity : ComponentActivity() {
 
             PMDTheme(darkTheme = isDarkTheme) {
 
-                // ✅ Determine the initial destination ONCE (from DataStore session)
-                val startDestination = if (isLoggedIn) Routes.EMPLOYEE_LIST else Routes.LOGIN
+                // ✅ Always start with splash video
+                val startDestination = Routes.SPLASH
 
                 // ✅ Define logout action (manual only)
                 val logoutAction: () -> Unit = {
@@ -160,9 +160,12 @@ class MainActivity : ComponentActivity() {
                     
                     delay(300) // ⏳ wait for ViewModel to fully restore session
 
+                    // Skip auto-navigation while splash is showing; splash handles routing
+                    val currentRoute = navController.currentDestination?.route
+                    if (currentRoute == Routes.SPLASH) return@LaunchedEffect
+
                     if (isLoggedIn && currentUser != null) {
                         // Only navigate if we're not already on EMPLOYEE_LIST
-                        val currentRoute = navController.currentDestination?.route
                         if (currentRoute != Routes.EMPLOYEE_LIST) {
                             Log.d("MainActivity", "🏠 Logged in as ${currentUser.name}, navigating to employee list")
                             navController.navigate(Routes.EMPLOYEE_LIST) {

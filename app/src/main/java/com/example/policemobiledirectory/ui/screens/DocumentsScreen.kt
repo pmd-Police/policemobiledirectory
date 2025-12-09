@@ -34,6 +34,7 @@ import com.example.policemobiledirectory.ui.viewmodel.DocumentsViewModel
 import com.example.policemobiledirectory.utils.OperationStatus
 import kotlinx.coroutines.launch
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.material3.TopAppBar
 
 @Composable
@@ -58,8 +59,15 @@ fun DocumentsScreen(
     var previewUrl by remember { mutableStateOf<String?>(null) }
     var previewMimeType by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        viewModel.fetchDocuments()
+    // Get the current back stack entry to detect when screen comes back into focus
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    
+    LaunchedEffect(currentRoute) {
+        // Only refresh if we're on the documents screen
+        if (currentRoute == com.example.policemobiledirectory.navigation.Routes.DOCUMENTS) {
+            viewModel.fetchDocuments()
+        }
     }
 
     val filteredDocs = remember(searchQuery, documents) {
@@ -234,8 +242,8 @@ fun DocumentsScreen(
                 )
             }
 
-            // 📤 Upload dialog
-            if (showUploadDialog) {
+            // 📤 Upload dialog (admin only)
+            if (isAdmin && showUploadDialog) {
                 UploadDocumentDialog(
                     onDismiss = { showUploadDialog = false },
                     onUpload = { title, uri, mimeType, category, description ->

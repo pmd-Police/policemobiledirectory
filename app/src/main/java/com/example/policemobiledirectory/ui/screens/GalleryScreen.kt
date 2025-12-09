@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import coil.compose.AsyncImage
 import com.example.policemobiledirectory.model.GalleryImage
 import com.example.policemobiledirectory.ui.viewmodel.GalleryViewModel
@@ -65,9 +66,16 @@ fun GalleryScreen(
     var viewMode by remember { mutableStateOf(ViewMode.Grid) } // Grid or List view
     var columnsPerRow by remember { mutableStateOf(4) } // 1, 2, 4, 6, 8 images per row
 
-    // 🔹 Fetch gallery images on launch
-    LaunchedEffect(Unit) {
-        viewModel.fetchGalleryImages()
+    // Get the current back stack entry to detect when screen comes back into focus
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    
+    // 🔹 Fetch gallery images on launch and when coming back
+    LaunchedEffect(currentRoute) {
+        // Only refresh if we're on the gallery screen
+        if (currentRoute == com.example.policemobiledirectory.navigation.Routes.GALLERY_SCREEN) {
+            viewModel.fetchGalleryImages()
+        }
     }
 
     // Handle upload status

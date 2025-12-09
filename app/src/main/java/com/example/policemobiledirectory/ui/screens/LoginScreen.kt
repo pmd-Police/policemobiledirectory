@@ -2,10 +2,12 @@ package com.example.policemobiledirectory.ui.screens
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
@@ -19,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -152,16 +156,27 @@ fun LoginScreen(
 
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+            .fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
+        // Background image
+        Image(
+            painter = painterResource(id = R.drawable.login_bg),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            alpha = 0.95f
+        )
+
+        // Foreground content with padding
         if (isLoading) {
             CircularProgressIndicator()
         } else {
             // The main login form UI
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -169,79 +184,158 @@ fun LoginScreen(
                 Image(
                     painter = painterResource(id = R.drawable.app_logo),
                     contentDescription = "App Logo",
-                    modifier = Modifier.size(120.dp),
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clip(CircleShape),
                     contentScale = ContentScale.Fit
                 )
                 Spacer(Modifier.height(16.dp))
-                Text("Police Mobile Directory", style = MaterialTheme.typography.headlineSmall)
+                // Police Mobile Directory title (larger, bright yellow, no box)
+                Text(
+                    text = "Police Mobile Directory",
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 28.sp
+                    ),
+                    color = androidx.compose.ui.graphics.Color(0xFFF8D722)
+                )
+                
+                // Disclaimer text with zoom animation and red color
+                Spacer(Modifier.height(8.dp))
+                val infiniteTransition = rememberInfiniteTransition(label = "zoom")
+                val scale by infiniteTransition.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 1.05f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(2000, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "scale"
+                )
+                Text(
+                    text = "This app is exclusively for Karnataka State Police Department personnel.\nIf you are not a member of KSP, please uninstall the PMD app.",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Medium
+                    ),
+                    textAlign = TextAlign.Center,
+                    color = androidx.compose.ui.graphics.Color(0xFFFF0000), // Red color
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .graphicsLayer(scaleX = scale, scaleY = scale)
+                )
                 Spacer(Modifier.height(24.dp))
 
-                // Email Input
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it.trim() },
-                    label = { Text("Email") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                // Expandable "Login with email and pin" button
+                var isEmailPinExpanded by remember { mutableStateOf(false) }
+                
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { isEmailPinExpanded = !isEmailPinExpanded },
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = androidx.compose.ui.graphics.Color(0xFFE3F2FD) // Light blue background
                     )
-                )
-                Spacer(Modifier.height(8.dp))
-
-                // PIN Input
-                OutlinedTextField(
-                    value = pin,
-                    onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) pin = it },
-                    label = { Text("6-digit PIN") },
-                    modifier = Modifier.fillMaxWidth(),
-                    visualTransformation = if (pinVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        val icon = if (pinVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility
-                        IconButton(onClick = { pinVisible = !pinVisible }) {
-                            Icon(icon, contentDescription = "Toggle PIN visibility")
+                ) {
+                    Column {
+                        // Button header
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Login with email and pin",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Icon(
+                                imageVector = if (isEmailPinExpanded) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = if (isEmailPinExpanded) "Collapse" else "Expand"
+                            )
                         }
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.NumberPassword,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(onDone = {
-                        focusManager.clearFocus()
-                        if (android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-                            viewModel.loginWithPin(email, pin)
-                        } else {
-                            Toast.makeText(context, "Please enter a valid email", Toast.LENGTH_SHORT).show()
-                        }
-                    })
-                )
-                Spacer(Modifier.height(12.dp))
+                        
+                        // Expandable content
+                        AnimatedVisibility(visible = isEmailPinExpanded) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Email Input
+                                OutlinedTextField(
+                                    value = email,
+                                    onValueChange = { email = it.trim() },
+                                    label = { Text("Email") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Email,
+                                        imeAction = ImeAction.Next
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                                    )
+                                )
 
-                // Login Button
-                Button(
-                    onClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-                            viewModel.loginWithPin(email, pin)
-                        } else {
-                            Toast.makeText(context, "Please enter a valid email", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = email.isNotBlank() && pin.length == 6
-                ) { Text("Login") }
-                Spacer(Modifier.height(8.dp))
+                                // PIN Input
+                                OutlinedTextField(
+                                    value = pin,
+                                    onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) pin = it },
+                                    label = { Text("6-digit PIN") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    visualTransformation = if (pinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        val icon = if (pinVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility
+                                        IconButton(onClick = { pinVisible = !pinVisible }) {
+                                            Icon(icon, contentDescription = "Toggle PIN visibility")
+                                        }
+                                    },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.NumberPassword,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    keyboardActions = KeyboardActions(onDone = {
+                                        focusManager.clearFocus()
+                                        if (android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                                            viewModel.loginWithPin(email, pin)
+                                        } else {
+                                            Toast.makeText(context, "Please enter a valid email", Toast.LENGTH_SHORT).show()
+                                        }
+                                    })
+                                )
 
-                // Forgot PIN Link
-                Text(
-                    "Forgot PIN?",
-                    modifier = Modifier.clickable { onForgotPinClicked() },
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Medium
-                )
+                                // Login Button
+                                Button(
+                                    onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        if (android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                                            viewModel.loginWithPin(email, pin)
+                                        } else {
+                                            Toast.makeText(context, "Please enter a valid email", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = email.isNotBlank() && pin.length == 6
+                                ) { Text("Login") }
+
+                                // Forgot PIN Link
+                                Text(
+                                    "Forgot PIN?",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onForgotPinClicked() },
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
 
                 // Divider
@@ -255,7 +349,7 @@ fun LoginScreen(
                 }
                 Spacer(Modifier.height(16.dp))
 
-                // Google Sign-In Button
+                // Google Sign-In/Register Button
                 Button(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -268,24 +362,8 @@ fun LoginScreen(
                         contentDescription = "Google Logo"
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Sign in with Google")
+                    Text("Sign in with Google/ Register")
                 }
-                Spacer(Modifier.height(16.dp))
-
-                // Register Link
-                Text(
-                    buildAnnotatedString {
-                        append("Don't have an account? ")
-                        withStyle(
-                            SpanStyle(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        ) { append("Register Here") }
-                    },
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.clickable { onRegisterNewUser(null) }
-                )
                 Spacer(Modifier.height(32.dp))
                 
                 // Developer Information

@@ -190,3 +190,5 @@ GET https://your-deployment-url/exec?action=pushDataToFirebase
 - [ ] Verify logs in Apps Script Executions
 
 Both files are **fully functional** and **ready to deploy**! 🚀
+
+

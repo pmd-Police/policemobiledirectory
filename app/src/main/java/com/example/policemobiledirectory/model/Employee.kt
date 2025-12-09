@@ -13,9 +13,9 @@ data class Employee(
     val mobile1: String? = null,   // STRING after migration
     val mobile2: String? = null,
     val rank: String? = null,
-    @get:PropertyName("metal")
-    @set:PropertyName("metal")
-    var metalNumber: String? = null,   // Firestore field: "metal" (matches Google Sheet column)
+    @get:PropertyName("metalNumber")
+    @set:PropertyName("metalNumber")
+    var metalNumber: String? = null,   // Firestore field: "metalNumber" (Google Sheet column: "metal")
     val district: String? = null,
     val station: String? = null,
     val bloodGroup: String? = null,
@@ -37,7 +37,8 @@ data class Employee(
         get() {
             val currentRank = rank ?: ""
             return if (currentRank.isNotBlank()) {
-                if (Constants.ranksRequiringMetalNumber.contains(currentRank) && !metalNumber.isNullOrBlank()) {
+                // Always show metal number with rank if metal number exists
+                if (!metalNumber.isNullOrBlank()) {
                     "$currentRank $metalNumber"
                 } else {
                     currentRank

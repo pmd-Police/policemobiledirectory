@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.example.policemobiledirectory.R
@@ -49,8 +51,17 @@ fun UsefulLinksScreen(
     val context = LocalContext.current
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
 
-    // Fetch links when screen loads
-    LaunchedEffect(Unit) { viewModel.fetchUsefulLinks() }
+    // Get the current back stack entry to detect when screen comes back into focus
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    
+    // Fetch links when screen loads and when coming back
+    LaunchedEffect(currentRoute) {
+        // Only refresh if we're on the useful links screen
+        if (currentRoute == com.example.policemobiledirectory.navigation.Routes.USEFUL_LINKS) {
+            viewModel.fetchUsefulLinks()
+        }
+    }
 
     // Show toast for delete status
     LaunchedEffect(pendingStatus) {
@@ -131,17 +142,14 @@ fun UsefulLinksScreen(
                     items(usefulLinks) { link ->
                         var showMenu by remember { mutableStateOf(false) }
                         
-                        Box {
+                    Box {
                             Column(
                                 modifier = Modifier
                                     .width(90.dp)
-                                    .clickable {
-                                        if (isAdmin) {
-                                            showMenu = true
-                                        } else {
-                                            handleLinkClick(context, link.playStoreUrl, link.apkUrl, link.name)
-                                        }
-                                    },
+                                // Always open the link on tap; admins have a separate menu button
+                                .clickable {
+                                    handleLinkClick(context, link.playStoreUrl, link.apkUrl, link.name)
+                                },
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 val iconModel = remember(link.iconUrl, link.playStoreUrl) {
@@ -216,8 +224,20 @@ fun UsefulLinksScreen(
                                 )
                             }
 
-                            // ✅ Admin delete menu
+                            // ✅ Admin menu button + dropdown
                             if (isAdmin) {
+                                IconButton(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(24.dp),
+                                    onClick = { showMenu = true }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.MoreVert,
+                                        contentDescription = "More"
+                                    )
+                                }
+
                                 DropdownMenu(
                                     expanded = showMenu,
                                     onDismissRequest = { showMenu = false }

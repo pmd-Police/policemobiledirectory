@@ -43,3 +43,5 @@ class SettingsViewModel @Inject constructor() : ViewModel() {
         _fontScale.value = scale.coerceIn(0.8f, 1.8f)
     }
 }
+
+

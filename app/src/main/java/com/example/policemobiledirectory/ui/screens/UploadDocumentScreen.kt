@@ -28,7 +28,8 @@ import java.text.DecimalFormat
 @Composable
 fun UploadDocumentScreen(
     navController: NavController,
-    viewModel: DocumentsViewModel = hiltViewModel()
+    viewModel: DocumentsViewModel = hiltViewModel(),
+    isAdmin: Boolean
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -76,6 +77,41 @@ fun UploadDocumentScreen(
             }
             else -> {}
         }
+    }
+
+    if (!isAdmin) {
+        // Non-admin users should not access upload UI
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Upload Document") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = androidx.compose.ui.graphics.Color.White,
+                        navigationIconContentColor = androidx.compose.ui.graphics.Color.White
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(
+                                imageVector = Icons.Filled.CloudUpload,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
+                )
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Only admins can upload documents.")
+            }
+        }
+        return
     }
 
     Scaffold(

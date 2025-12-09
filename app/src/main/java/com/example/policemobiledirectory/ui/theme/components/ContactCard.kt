@@ -18,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -31,7 +30,6 @@ import com.example.policemobiledirectory.model.Employee
 import com.example.policemobiledirectory.model.Officer
 import com.example.policemobiledirectory.ui.theme.*
 import com.example.policemobiledirectory.utils.IntentUtils
-import kotlin.math.absoluteValue
 
 /**
  * Unified contact card that works for both Employee and Officer
@@ -47,24 +45,14 @@ fun ContactCard(
     
     // Use employee if available, otherwise officer
     val name = employee?.name ?: officer?.name ?: ""
-    val rank = employee?.rank ?: officer?.rank
+    // Use displayRank for employees (includes metal number when applicable), regular rank for officers
+    val rank = employee?.displayRank ?: officer?.rank
     val station = employee?.station ?: officer?.station
     val district = employee?.district ?: officer?.district
     val mobileNumber = employee?.mobile1 ?: officer?.mobile
     val landlineNumber = officer?.landline
     val photoUrl = employee?.photoUrl ?: employee?.photoUrlFromGoogle ?: officer?.photoUrl
     val placeholderRes = if (employee != null) R.drawable.officer else R.drawable.ic_officer_building
-    val id = employee?.kgid ?: officer?.agid ?: ""
-    
-    val gradientColors = listOf(
-        GradientStartBlue to GradientEndBlue,
-        GradientStartGreen to GradientEndBlue,
-        GradientStartPurple to GradientEndPurple,
-        GradientStartOrange to GradientEndOrange,
-        GradientStartTeal to GradientEndTeal
-    )
-    val colorIndex = id.hashCode().absoluteValue % gradientColors.size
-    val (startColor, endColor) = gradientColors[colorIndex]
 
     Card(
         modifier = Modifier
@@ -83,8 +71,9 @@ fun ContactCard(
     ) {
         Box(
             modifier = Modifier.background(
-                brush = Brush.linearGradient(listOf(startColor, endColor)),
-                alpha = com.example.policemobiledirectory.ui.theme.GlassOpacity
+                color = com.example.policemobiledirectory.ui.theme.EmployeeCardBackground.copy(
+                    alpha = com.example.policemobiledirectory.ui.theme.GlassOpacity
+                )
             )
         ) {
             // 🔹 Blood Group badge in red circle at top right corner of card (for employees only)

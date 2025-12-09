@@ -276,20 +276,6 @@ class AuthViewModel @Inject constructor(
             _otpUiState.value = OperationStatus.Loading
 
             try {
-                // Check if email exists and is approved before sending OTP
-                val employee = employeeRepo.getEmployeeByEmail(email)
-
-                if (employee == null) {
-                    _otpUiState.value = OperationStatus.Error("❌ No account found with this email.")
-                    return@launch
-                }
-
-                if (!employee.isApproved) {
-                    _otpUiState.value = OperationStatus.Error("⚠️ Account not approved yet. Please wait for admin approval.")
-                    return@launch
-                }
-
-                // Proceed with OTP if approved
                 when (val result = employeeRepo.sendOtp(email)) {
                     is RepoResult.Success -> {
                         _otpUiState.value = OperationStatus.Success(result.data ?: "OTP sent to $email")
@@ -486,3 +472,5 @@ class AuthViewModel @Inject constructor(
         }
     }
 }
+
+

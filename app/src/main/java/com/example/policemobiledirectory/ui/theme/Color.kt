@@ -118,7 +118,11 @@ val ChipSelectedStart = PrimaryTeal
 val ChipSelectedEnd = PrimaryTealLight
 val ChipUnselected = BackgroundWhite
 
-// Employee Card Gradients (Teal theme)
+// Employee Card Background Color (Light Cyan/Teal)
+// Single solid color for all employee cards (matching KGID 2810847)
+val EmployeeCardBackground = Color(0xFF9DDCE7)  // Light cyan/teal #9DDCE7
+
+// Employee Card Gradients (Teal theme) - Legacy, kept for compatibility
 // Upper cards: Light teal gradient
 val CardGradientUpperStart = Color(0xFFB2EBF2)  // Very light teal
 val CardGradientUpperEnd = Color(0xFF80DEEA)    // Light teal

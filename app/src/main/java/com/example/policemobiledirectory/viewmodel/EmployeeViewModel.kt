@@ -164,7 +164,10 @@ open class EmployeeViewModel @Inject constructor(
         searchFiltersFlow
     ) { contacts, filters ->
         // Early exit if no contacts
-        if (contacts.isEmpty()) return@combine emptyList<Contact>()
+        if (contacts.isEmpty()) {
+            Log.w("FilteredContacts", "⚠️ No contacts available (allContacts is empty)")
+            return@combine emptyList<Contact>()
+        }
         
         // Step 1: Fast pre-filtering by district/station/rank (cheap operations)
         // Simplified logic: When filter is "All", show everything. Otherwise, match specific values only.
@@ -179,6 +182,14 @@ open class EmployeeViewModel @Inject constructor(
             districtMatch && stationMatch && rankMatch
         }
         
+        // Log when filters result in empty list
+        if (preFiltered.isEmpty() && contacts.isNotEmpty()) {
+            Log.w("FilteredContacts", "⚠️ No contacts match filters: district='${filters.district}', station='${filters.station}', rank='${filters.rank}', query='${filters.query}'")
+            Log.d("FilteredContacts", "Available districts: ${contacts.mapNotNull { it.district }.distinct().take(5)}")
+            Log.d("FilteredContacts", "Available stations: ${contacts.mapNotNull { it.station }.distinct().take(5)}")
+            Log.d("FilteredContacts", "Available ranks: ${contacts.mapNotNull { it.rank }.distinct().take(5)}")
+        }
+        
         // Early exit if no matches after pre-filtering
         if (preFiltered.isEmpty()) return@combine emptyList<Contact>()
         
@@ -191,23 +202,47 @@ open class EmployeeViewModel @Inject constructor(
         if (queryLower.isEmpty()) return@combine preFiltered
         
         // Optimized text matching
-        preFiltered.filter { contact ->
+        val textFiltered = preFiltered.filter { contact ->
             when {
-                contact.employee != null -> contact.employee.matchesOptimized(queryLower, filters.filter)
-                contact.officer != null -> {
-                    val filterString = when (filters.filter) {
-                        SearchFilter.NAME -> "name"
-                        SearchFilter.KGID -> "agid"
-                        SearchFilter.MOBILE -> "mobile"
-                        SearchFilter.STATION -> "station"
-                        SearchFilter.RANK -> "rank"
-                        SearchFilter.METAL_NUMBER -> "" // Officers don't have metal numbers
+                contact.employee != null -> {
+                    val matches = contact.employee.matchesOptimized(queryLower, filters.filter)
+                    if (filters.filter == SearchFilter.METAL_NUMBER) {
+                        Log.d("MetalSearch", "Employee ${contact.employee.name}: metalNumber='${contact.employee.metalNumber}', query='$queryLower', matches=$matches")
                     }
-                    contact.officer.matchesOptimized(queryLower, filterString)
+                    matches
+                }
+                contact.officer != null -> {
+                    // Officers don't have metal numbers, so exclude them from metal number searches
+                    if (filters.filter == SearchFilter.METAL_NUMBER) {
+                        false
+                    } else {
+                        val filterString = when (filters.filter) {
+                            SearchFilter.NAME -> "name"
+                            SearchFilter.KGID -> "agid"
+                            SearchFilter.MOBILE -> "mobile"
+                            SearchFilter.STATION -> "station"
+                            SearchFilter.RANK -> "rank"
+                            SearchFilter.METAL_NUMBER -> "" // This case is handled above
+                        }
+                        contact.officer.matchesOptimized(queryLower, filterString)
+                    }
                 }
                 else -> false
             }
         }
+        
+        if (textFiltered.isEmpty() && preFiltered.isNotEmpty()) {
+            Log.d("FilteredContacts", "⚠️ Text search filtered out all ${preFiltered.size} contacts (filter: ${filters.filter}, query: '$queryLower')")
+            if (filters.filter == SearchFilter.METAL_NUMBER) {
+                val employeesWithMetal = preFiltered.filter { it.employee != null && !it.employee?.metalNumber.isNullOrBlank() }
+                Log.d("MetalSearch", "⚠️ Metal search: ${preFiltered.size} pre-filtered contacts, ${employeesWithMetal.size} have metal numbers")
+                employeesWithMetal.take(5).forEach { contact ->
+                    Log.d("MetalSearch", "  - ${contact.employee?.name}: metalNumber='${contact.employee?.metalNumber}'")
+                }
+            }
+        }
+        
+        textFiltered
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     
     private val _adminNotifications = MutableStateFlow<List<AppNotification>>(emptyList())
@@ -708,20 +743,6 @@ open class EmployeeViewModel @Inject constructor(
             _otpUiState.value = OperationStatus.Loading
 
             try {
-                // ✅ 1. Check if email exists and is approved before sending OTP
-                val employee = employeeRepo.getEmployeeByEmail(email)
-
-                if (employee == null) {
-                    _otpUiState.value = OperationStatus.Error("❌ No account found with this email.")
-                    return@launch
-                }
-
-                if (!employee.isApproved) {
-                    _otpUiState.value = OperationStatus.Error("⚠️ Account not approved yet. Please wait for admin approval.")
-                    return@launch
-                }
-
-                // ✅ 2. Proceed with OTP if approved
                 when (val result = employeeRepo.sendOtp(email)) {
                     is RepoResult.Success -> {
                         _otpUiState.value = OperationStatus.Success(result.data ?: "OTP sent to $email")
@@ -890,7 +911,16 @@ open class EmployeeViewModel @Inject constructor(
                 rank?.lowercase()?.contains(queryLower) == true
             }
             SearchFilter.METAL_NUMBER -> {
-                metalNumber?.lowercase()?.contains(queryLower) == true
+                // Handle null/empty metal numbers - store in local variable for smart cast
+                val metalNum = metalNumber
+                if (metalNum.isNullOrBlank()) {
+                    false
+                } else {
+                    // Normalize both values: trim whitespace and compare
+                    val normalizedMetal = metalNum.trim().lowercase()
+                    val normalizedQuery = queryLower.trim()
+                    normalizedMetal.contains(normalizedQuery)
+                }
             }
         }
     }

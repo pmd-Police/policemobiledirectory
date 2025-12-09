@@ -28,7 +28,12 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Transaction
 import com.google.firebase.functions.FirebaseFunctions
+import com.google.firebase.functions.FirebaseFunctionsException
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.ktx.Firebase
+import java.net.URL
 
 import java.util.Date
 
@@ -46,6 +51,23 @@ open class EmployeeRepository @Inject constructor(
     private val employeesCollection = firestore.collection("employees")
     private val storageRef = storage.reference
     private val metaDoc = firestore.collection("meta").document("idCounters")
+
+    /**
+     * Firestore rules require an authenticated user. If the app is logged out,
+     * ensure we still have a lightweight anonymous Firebase session before
+     * performing Firestore reads (e.g., login via email+PIN).
+     */
+    private suspend fun ensureFirestoreAuth() {
+        if (auth.currentUser == null) {
+            try {
+                Log.d(TAG, "ensureFirestoreAuth: signing in anonymously for Firestore access")
+                Firebase.auth.signInAnonymously().await()
+            } catch (e: Exception) {
+                Log.e(TAG, "ensureFirestoreAuth: anonymous sign-in failed", e)
+                throw e
+            }
+        }
+    }
 
 
     companion object {
@@ -80,6 +102,8 @@ open class EmployeeRepository @Inject constructor(
     fun loginUserWithPin(email: String, pin: String): Flow<RepoResult<Employee>> = flow {
         emit(RepoResult.Loading)
         try {
+            ensureFirestoreAuth()
+
             // Step 1 — Local lookup (Room)
             val localEmployee = employeeDao.getEmployeeByEmail(email)
             if (localEmployee != null) {
@@ -118,6 +142,15 @@ open class EmployeeRepository @Inject constructor(
             // Step 3 — Verify entered PIN against stored hash (remote)
             if (!PinHasher.verifyPin(pin, remotePinHash)) {
                 emit(RepoResult.Error(null,"Invalid email or PIN"))
+                return@flow
+            }
+
+            try {
+                FirebaseAuth.getInstance().signInAnonymously().await()
+                Log.d(TAG, "🔥 Firebase anonymous login success (PIN login)")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Firebase anonymous login failed (PIN login)", e)
+                emit(RepoResult.Error(e, "Login failed. Try again."))
                 return@flow
             }
 
@@ -274,12 +307,11 @@ open class EmployeeRepository @Inject constructor(
         return try {
             Log.d(TAG, "📤 Attempting to send OTP to: $email")
 
-            val code = generateRandomCode()
-            val data = mapOf("email" to email, "code" to code)
+            val data = mapOf("email" to email)
 
-            // Call Firebase Function (returns HttpsCallableResult)
-            val result = functions
-                .getHttpsCallable("sendOtpEmail")
+            // CRITICAL FIX: explicitly asking for the 'asia-south1' instance
+            val result = FirebaseFunctions.getInstance("asia-south1")
+                .getHttpsCallable("requestOtp")
                 .call(data)
                 .await()
 
@@ -287,35 +319,39 @@ open class EmployeeRepository @Inject constructor(
             val responseData = result.data as? Map<*, *>
             Log.d(TAG, "✅ Cloud Function response: $responseData")
 
-            // Handle Cloud Function error
             if (responseData == null || responseData["success"] != true) {
                 val msg = responseData?.get("message")?.toString() ?: "Unknown error from server."
                 Log.e(TAG, "❌ Cloud Function returned error: $msg")
                 return RepoResult.Error(Exception(msg), msg)
             }
 
-            // ✅ Do NOT write OTP to Firestore here (already done in Cloud Function)
-            Log.d(TAG, "📩 OTP email successfully sent to $email")
+            Log.d(TAG, "📩 OTP email successfully requested for $email")
 
-            RepoResult.Success("Verification code sent to your email.")
+            RepoResult.Success(responseData["message"]?.toString() ?: "Verification code sent to your email.")
 
         } catch (e: Exception) {
             Log.e(TAG, "💥 OTP send failed: ${e.message}", e)
+            // If e.message contains "404", it specifically means the function URL was not found.
             RepoResult.Error(e, e.message ?: "Failed to send verification code.")
         }
     }
 
 
-
     // 🔹 3. Verify OTP code
     suspend fun verifyLoginCode(email: String, code: String): RepoResult<Employee> {
-        Log.d(TAG, "verifyLoginCode() called for email=$email code=$code")
+        val normalizedEmail = email.trim().lowercase()
+
+        Log.d(TAG, "verifyLoginCode() called for normalizedEmail=$normalizedEmail code=$code")
+        Log.e("EMAIL_CHECK", "Email entering verifyOtp = '${email}'")
 
         return try {
-            // Step 1️⃣: Call Cloud Function for OTP verification
-            val data = mapOf("email" to email, "code" to code)
+            val data = mapOf(
+                "email" to normalizedEmail,
+                "code" to code.trim()
+            )
 
-            val result = functions
+            val result = FirebaseFunctions
+                .getInstance("asia-south1")
                 .getHttpsCallable("verifyOtpEmail")
                 .call(data)
                 .await()
@@ -329,25 +365,25 @@ open class EmployeeRepository @Inject constructor(
                 return RepoResult.Error(null, msg)
             }
 
-            // Step 2️⃣: OTP verified — fetch employee record
-            val empSnap = firestore.collection("employees")
-                .whereEqualTo("email", email)
-                .limit(1)
-                .get()
-                .await()
-
-            if (empSnap.isEmpty()) {
-                Log.e(TAG, "❌ No employee found for email: $email")
-                RepoResult.Error(null, "No employee found for this email")
-            } else {
-                val doc = empSnap.documents.first()
-                // ✅ CRITICAL FIX: Ensure kgid is set from document ID if field is missing
-                val docKgid = doc.getString(FIELD_KGID)?.takeIf { it.isNotBlank() } ?: doc.id
-                val emp = doc.toObject(Employee::class.java)!!.copy(kgid = docKgid)
-                employeeDao.insertEmployee(emp.toEntity())
-                Log.d(TAG, "✅ Employee data fetched and cached locally for $email")
-                RepoResult.Success(emp)
+            val empData = response["employee"] as? Map<*, *>
+            if (empData == null) {
+                Log.e(TAG, "❌ No employee data returned for $normalizedEmail")
+                return RepoResult.Error(null, "No employee found for this email")
             }
+
+            val emp = mapEmployeeFromResponse(empData)
+            employeeDao.insertEmployee(emp.toEntity())
+
+            try {
+                FirebaseAuth.getInstance().signInAnonymously().await()
+                Log.d(TAG, "🔥 Firebase anonymous login success (OTP flow)")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Firebase anonymous login failed (OTP flow)", e)
+                return RepoResult.Error(e, "Login failed. Please try again.")
+            }
+
+            Log.d(TAG, "✅ Employee cached for $normalizedEmail")
+            RepoResult.Success(emp)
 
         } catch (e: Exception) {
             Log.e(TAG, "💥 verifyLoginCode() failed", e)
@@ -739,7 +775,7 @@ open class EmployeeRepository @Inject constructor(
                 mobile1 = doc.getString("mobile1") ?: "",
                 mobile2 = doc.getString("mobile2") ?: "",
                 rank = doc.getString("rank") ?: "",
-                metalNumber = doc.getString("metal") ?: "", // Firestore field name: "metal"
+                metalNumber = doc.getString("metalNumber") ?: doc.getString("metal") ?: "", // Firestore field: "metalNumber" (fallback to "metal" for old data)
                 district = doc.getString("district") ?: "",
                 station = doc.getString("station") ?: "",
                 bloodGroup = doc.getString("bloodGroup") ?: "",
@@ -754,6 +790,34 @@ open class EmployeeRepository @Inject constructor(
                 pin = pinHash
             )
         }
+    }
+
+    private fun mapEmployeeFromResponse(data: Map<*, *>): Employee {
+        fun str(key: String): String = data[key]?.toString().orEmpty()
+        fun bool(key: String): Boolean = when (val value = data[key]) {
+            is Boolean -> value
+            else -> value?.toString()?.toBoolean() ?: false
+        }
+
+        return Employee(
+            kgid = str("kgid"),
+            name = str("name"),
+            email = str("email"),
+            pin = str("pin").ifBlank { null },
+            mobile1 = str("mobile1").ifBlank { null },
+            mobile2 = str("mobile2").ifBlank { null },
+            rank = str("rank").ifBlank { null },
+            metalNumber = str("metalNumber").ifBlank { null },
+            district = str("district").ifBlank { null },
+            station = str("station").ifBlank { null },
+            bloodGroup = str("bloodGroup").ifBlank { null },
+            photoUrl = str("photoUrl").ifBlank { null },
+            photoUrlFromGoogle = str("photoUrlFromGoogle").ifBlank { null },
+            fcmToken = str("fcmToken").ifBlank { null },
+            firebaseUid = str("firebaseUid").ifBlank { null },
+            isAdmin = bool("isAdmin"),
+            isApproved = data["isApproved"] as? Boolean ?: true
+        )
     }
 
     // build EmployeeEntity from POJO (no pin)

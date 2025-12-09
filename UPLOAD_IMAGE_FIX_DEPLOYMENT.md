@@ -80,3 +80,5 @@ https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?action=uploadImage
 - The fixed script (`APPS_SCRIPT_UPLOAD_IMAGE_FIX.js`) is a simplified, focused version that handles base64 JSON uploads
 - It always returns JSON, even on errors
 - Debug information is included in responses to help troubleshoot issues
+
+

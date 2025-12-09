@@ -40,3 +40,5 @@ function doGet(e) {
     message: "GET endpoint works"
   })).setMimeType(ContentService.MimeType.JSON);
 }
+
+

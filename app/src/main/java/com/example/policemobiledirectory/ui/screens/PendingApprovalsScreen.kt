@@ -18,6 +18,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import coil.compose.AsyncImage
 import com.example.policemobiledirectory.R
 import androidx.compose.ui.window.Dialog
@@ -51,9 +52,16 @@ fun PendingApprovalsScreen(
     var dialogActionIsApprove by remember { mutableStateOf(true) }
     var pendingToEdit by remember { mutableStateOf<PendingRegistrationEntity?>(null) }
 
-    // ✅ Fetch pending registrations on screen load
-    LaunchedEffect(Unit) {
-        viewModel.refreshPendingRegistrations()
+    // Get the current back stack entry to detect when screen comes back into focus
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    
+    // ✅ Fetch pending registrations on screen load and when coming back
+    LaunchedEffect(currentRoute) {
+        // Only refresh if we're on the pending approvals screen
+        if (currentRoute == com.example.policemobiledirectory.navigation.Routes.PENDING_APPROVALS) {
+            viewModel.refreshPendingRegistrations()
+        }
     }
 
     // ✅ Listen for operation results (approve/reject)

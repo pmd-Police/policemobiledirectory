@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Box
@@ -94,8 +95,18 @@ fun EmployeeListScreen(
         userNotifications.count { (it.timestamp ?: 0L) > userNotificationsSeenAt }
     }
 
-    LaunchedEffect(Unit) { 
-        viewModel.checkIfAdmin()
+    // Get the current back stack entry to detect when screen comes back into focus
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    
+    LaunchedEffect(currentRoute) { 
+        // Only refresh if we're on the employee list screen
+        if (currentRoute == Routes.EMPLOYEE_LIST) {
+            viewModel.checkIfAdmin()
+            // Refresh data when screen comes back into focus
+            viewModel.refreshEmployees()
+            viewModel.refreshOfficers()
+        }
         // Constants.kt is the primary source - no automatic syncing
     }
 
@@ -253,6 +264,7 @@ private fun EmployeeListContent(
 ) {
     val filteredEmployees by viewModel.filteredEmployees.collectAsStateWithLifecycle()
     val filteredContacts by viewModel.filteredContacts.collectAsStateWithLifecycle()
+    val allContacts by viewModel.allContacts.collectAsStateWithLifecycle()
     val employeeStatus by viewModel.employeeStatus.collectAsStateWithLifecycle()
     val officerStatus by viewModel.officerStatus.collectAsStateWithLifecycle()
     val searchFilter by viewModel.searchFilter.collectAsStateWithLifecycle()
@@ -329,14 +341,14 @@ private fun EmployeeListContent(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
 
         // 🔸 DISTRICT & STATION DROPDOWNS
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             // District Dropdown - Glassmorphism style
             ExposedDropdownMenuBox(
@@ -487,7 +499,7 @@ private fun EmployeeListContent(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             // Rank Dropdown - Glassmorphism style
             ExposedDropdownMenuBox(
@@ -618,7 +630,7 @@ private fun EmployeeListContent(
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 6.dp, bottom = 2.dp)
+                .padding(top = 2.dp, bottom = 2.dp)
         ) {
             searchFields.forEach { filter ->
                 // Skip KGID for non-admins
@@ -705,8 +717,53 @@ private fun EmployeeListContent(
                 }
                 else -> {
                     if (filteredContacts.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), Alignment.Center) {
-                            Text("No contacts found.", color = MaterialTheme.colorScheme.onBackground)
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.padding(24.dp)
+                            ) {
+                                if (allContacts.isEmpty()) {
+                                    Text(
+                                        "No contacts available.",
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        fontSize = 16.sp
+                                    )
+                                    Text(
+                                        "Try refreshing the list.",
+                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                        fontSize = 14.sp
+                                    )
+                                } else {
+                                    Text(
+                                        "No contacts match your filters.",
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        fontSize = 16.sp
+                                    )
+                                    Text(
+                                        "Try adjusting district, station, rank, or search filters.",
+                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                        fontSize = 14.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Button(
+                                        onClick = {
+                                            viewModel.updateSelectedDistrict("All")
+                                            viewModel.updateSelectedStation("All")
+                                            viewModel.updateSelectedRank("All")
+                                            viewModel.updateSearchQuery("")
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = PrimaryTeal
+                                        )
+                                    ) {
+                                        Text("Reset All Filters")
+                                    }
+                                }
+                            }
                         }
                     } else {
                         LazyColumn(

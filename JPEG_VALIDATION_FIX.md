@@ -65,3 +65,5 @@ This will help identify if it's a byte encoding issue or something else.
 - The base64 encoding/decoding should preserve the bytes correctly
 - The blob creation in Apps Script should handle the file even if our validation is slightly off
 - The debug output will show us exactly what bytes are being received
+
+

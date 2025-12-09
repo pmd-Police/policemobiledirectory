@@ -221,3 +221,5 @@ class PendingRegistrationViewModel @Inject constructor(
         _pendingStatus.value = OperationStatus.Idle
     }
 }
+
+

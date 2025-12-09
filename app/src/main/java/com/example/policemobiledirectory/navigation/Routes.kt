@@ -3,6 +3,7 @@ package com.example.policemobiledirectory.navigation
 object Routes {
 
     // --- Core Screens ---
+    const val SPLASH = "splash"
     const val LOGIN = "login"
     const val REGISTER = "register"
     const val EMPLOYEE_LIST = "employee_list"
