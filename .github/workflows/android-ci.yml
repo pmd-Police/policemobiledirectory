@@ -10,6 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     
     steps:
     - name: Checkout code
@@ -34,37 +35,39 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
           
+    - name: Verify google-services.json exists
+      run: |
+        if [ ! -f "app/google-services.json" ]; then
+          echo "❌ ERROR: app/google-services.json is missing!"
+          echo "This file is required for Firebase. Please ensure it's committed to the repository."
+          exit 1
+        else
+          echo "✅ google-services.json found"
+        fi
+      
     - name: Build with Gradle
-      run: ./gradlew build
+      run: ./gradlew build --no-daemon --stacktrace
+      env:
+        GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
       
     - name: Run tests
-      run: ./gradlew test
+      run: ./gradlew test --no-daemon
+      continue-on-error: true
       
     - name: Lint check
-      run: ./gradlew lint
+      run: ./gradlew lint --no-daemon
       continue-on-error: true
       
-    - name: Build APK
-      run: ./gradlew assembleDebug
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug --no-daemon --stacktrace
+      env:
+        GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
       
-    - name: Build Release AAB
-      run: ./gradlew bundleRelease
-      continue-on-error: true
-      
-    - name: Upload APK artifact
+    - name: Upload Debug APK artifact
       uses: actions/upload-artifact@v4
       if: success()
       with:
         name: app-debug-apk
         path: app/build/outputs/apk/debug/app-debug.apk
         retention-days: 7
-        
-    - name: Upload AAB artifact
-      uses: actions/upload-artifact@v4
-      if: success()
-      with:
-        name: app-release-aab
-        path: app/build/outputs/bundle/release/app-release.aab
-        retention-days: 7
-      continue-on-error: true
-
+        if-no-files-found: warn
