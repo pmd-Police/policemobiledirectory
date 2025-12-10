@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.policemobiledirectory.api.SyncApiService
 import com.example.policemobiledirectory.api.OfficersSyncApiService
 import com.google.gson.JsonParser
+import com.example.policemobiledirectory.utils.SecurityConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.ResponseBody
@@ -11,12 +12,15 @@ import javax.inject.Inject
 
 class SyncRepository @Inject constructor(
     private val api: SyncApiService,
-    private val officersApi: OfficersSyncApiService
+    private val officersApi: OfficersSyncApiService,
+    private val securityConfig: SecurityConfig
 ) {
+
+    private fun token() = securityConfig.getSecretToken()
 
     suspend fun syncFirestoreToSheet(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            parseSyncMessage(api.syncFirebaseToSheet(), "Firestore → Sheet")
+            parseSyncMessage(api.syncFirebaseToSheet(token = token()), "Firestore → Sheet")
         }.onFailure {
             Log.e("SyncRepository", "syncFirestoreToSheet failed", it)
         }
@@ -24,7 +28,7 @@ class SyncRepository @Inject constructor(
 
     suspend fun syncSheetToFirestore(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            parseSyncMessage(api.syncSheetToFirebase(), "Sheet → Firestore")
+            parseSyncMessage(api.syncSheetToFirebase(token = token()), "Sheet → Firestore")
         }.onFailure {
             Log.e("SyncRepository", "syncSheetToFirestore failed", it)
         }
@@ -32,7 +36,7 @@ class SyncRepository @Inject constructor(
     
     suspend fun syncOfficersSheetToFirestore(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            parseSyncMessage(officersApi.syncOfficersSheetToFirebase(), "Officers Sheet → Firestore")
+            parseSyncMessage(officersApi.syncOfficersSheetToFirebase(token = token()), "Officers Sheet → Firestore")
         }.onFailure {
             Log.e("SyncRepository", "syncOfficersSheetToFirestore failed", it)
         }

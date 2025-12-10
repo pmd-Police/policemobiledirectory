@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.BackHandler
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.policemobiledirectory.navigation.Routes
@@ -34,6 +35,15 @@ fun AdminPanelScreen(
     val constantsRefreshStatus by constantsViewModel.refreshStatus.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+
+    // Handle back button to navigate to home screen
+    BackHandler {
+        // Navigate to home screen, clearing back stack up to (but not including) EMPLOYEE_LIST
+        navController.navigate(Routes.EMPLOYEE_LIST) {
+            popUpTo(Routes.EMPLOYEE_LIST) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
 
     val employeesCount = employeesList.size
     val pendingRegistrationsCount = pendingRegistrationsList.size

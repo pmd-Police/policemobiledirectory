@@ -4,10 +4,12 @@ import com.example.policemobiledirectory.api.EmployeeApiService
 import com.example.policemobiledirectory.api.SyncApiService
 import com.example.policemobiledirectory.api.OfficersSyncApiService
 import com.example.policemobiledirectory.api.ConstantsApiService
+import com.example.policemobiledirectory.api.UsefulLinksApiService
 import com.example.policemobiledirectory.data.remote.DocumentsApiService
 import com.example.policemobiledirectory.data.remote.GalleryApiService
 import com.example.policemobiledirectory.repository.DocumentsRepository
 import com.example.policemobiledirectory.repository.GalleryRepository
+import com.example.policemobiledirectory.utils.SecurityConfig
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -43,6 +45,10 @@ object NetworkModule {
     private const val CONSTANTS_BASE_URL =
         "https://script.google.com/macros/s/AKfycbyFMd7Qsv02wDYdM71ZCh_hUr08aFW6eYRztgmUYYI1ZuOKbKAXQtxnSZ3bhfbKWahY/"
     
+    // ✅ Useful Links API URL (for useful links management)
+    private const val USEFUL_LINKS_BASE_URL =
+        "https://script.google.com/macros/s/AKfycbyut8D5xNsytdL7m0IDiK5fH2z0s7Kc9eO8bT5IDqCpHworWvaTBMzB0MUcJmszlT1v/"
+    
     @Provides
     @Singleton
     @Named("OfficersSyncRetrofit")
@@ -62,6 +68,9 @@ object NetworkModule {
     @Named("DocumentsRetrofit")
     fun provideDocumentsRetrofit(): Retrofit {
         // Extended timeouts for large document uploads
+        val gsonLenient = GsonBuilder()
+            .setLenient()
+            .create()
         val okHttpClient = OkHttpClient.Builder()
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(180, TimeUnit.SECONDS)  // 3 minutes for large uploads
@@ -71,7 +80,7 @@ object NetworkModule {
         return Retrofit.Builder()
             .baseUrl(DOCUMENTS_BASE_URL)
             .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(gsonLenient))
             .build()
     }
 
@@ -101,20 +110,29 @@ object NetworkModule {
     @Provides
     @Singleton
     @Named("SyncRetrofit")
-    fun provideSyncRetrofit(): Retrofit =
-        Retrofit.Builder()
+    fun provideSyncRetrofit(): Retrofit {
+        val okHttpClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build()
+        
+        return Retrofit.Builder()
             .baseUrl(EMPLOYEES_SYNC_BASE_URL)
+            .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
+    }
 
     @Provides
     @Singleton
     @Named("ConstantsRetrofit")
     fun provideConstantsRetrofit(): Retrofit {
         val okHttpClient = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
-            .writeTimeout(10, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
         
         return Retrofit.Builder()
@@ -152,14 +170,44 @@ object NetworkModule {
     fun provideConstantsApiService(@Named("ConstantsRetrofit") retrofit: Retrofit): ConstantsApiService =
         retrofit.create(ConstantsApiService::class.java)
 
-    // ✅ Add this if you didn't use @Inject constructor in repository
+    // ✅ Useful Links API
     @Provides
     @Singleton
-    fun provideDocumentsRepository(api: DocumentsApiService): DocumentsRepository =
-        DocumentsRepository(api)
+    @Named("UsefulLinksRetrofit")
+    fun provideUsefulLinksRetrofit(): Retrofit {
+        val okHttpClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+        
+        return Retrofit.Builder()
+            .baseUrl(USEFUL_LINKS_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
 
     @Provides
     @Singleton
-    fun provideGalleryRepository(api: GalleryApiService): GalleryRepository =
-        GalleryRepository(api)
+    fun provideUsefulLinksApiService(@Named("UsefulLinksRetrofit") retrofit: Retrofit): UsefulLinksApiService =
+        retrofit.create(UsefulLinksApiService::class.java)
+
+    // ✅ Add this if you didn't use @Inject constructor in repository
+    @Provides
+    @Singleton
+    fun provideDocumentsRepository(
+        api: DocumentsApiService,
+        securityConfig: SecurityConfig
+    ): DocumentsRepository =
+        DocumentsRepository(api, securityConfig)
+
+    @Provides
+    @Singleton
+    fun provideGalleryRepository(
+        api: GalleryApiService,
+        securityConfig: SecurityConfig
+    ): GalleryRepository =
+        GalleryRepository(api, securityConfig)
 }

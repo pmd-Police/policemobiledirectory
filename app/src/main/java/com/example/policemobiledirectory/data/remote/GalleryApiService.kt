@@ -6,13 +6,21 @@ import retrofit2.http.*
 interface GalleryApiService {
 
     @GET("exec?action=getGallery")
-    suspend fun getGalleryImages(): List<GalleryImage>
+    suspend fun getGalleryImagesRaw(
+        @Query("token") token: String? = null
+    ): retrofit2.Response<okhttp3.ResponseBody>
 
     @POST("exec?action=uploadGallery")
-    suspend fun uploadGalleryImage(@Body request: GalleryUploadRequest): ApiResponse
+    suspend fun uploadGalleryImage(
+        @Query("token") token: String? = null,
+        @Body request: GalleryUploadRequest
+    ): ApiResponse
 
     @POST("exec?action=deleteGallery")
-    suspend fun deleteGalleryImage(@Body request: GalleryDeleteRequest): ApiResponse
+    suspend fun deleteGalleryImage(
+        @Query("token") token: String? = null,
+        @Body request: GalleryDeleteRequest
+    ): ApiResponse
 }
 
 

@@ -3,114 +3,244 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 🔹 OTP CODES COLLECTION
+    // ============================================================
+    // 🔐 HELPER FUNCTIONS
+    // ============================================================
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user is admin (from admins collection keyed by email)
+    function isAdmin() {
+      return request.auth != null
+          && exists(/databases/$(database)/documents/admins/$(request.auth.token.email))
+          && get(/databases/$(database)/documents/admins/$(request.auth.token.email)).data.isActive == true;
+    }
+
+    // Check if request is from service account (Apps Script with proper auth)
+    function isServiceAccount() {
+      return request.auth != null
+          && request.auth.token.firebase != null
+          && request.auth.token.firebase.sign_in_provider == "service_account";
+    }
+
+    // Validate email format
+    function isValidEmail(email) {
+      return email.matches('^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$');
+    }
+
+    // ============================================================
+    // 🔹 OTP CODES COLLECTION (Server-managed with rate limiting)
+    // ============================================================
     match /otp_codes/{email} {
-      allow create, update, delete: if true;
-      allow read: if false;
+      // Service account (Firebase Functions) can create OTPs
+      allow create: if isServiceAccount()
+                    && isValidEmail(email)
+                    && request.resource.data.keys().hasAll(['code', 'timestamp'])
+                    && request.resource.data.code is string
+                    && request.resource.data.timestamp is number
+                    && request.resource.data.timestamp > 0;
+      
+      // Users can read only their own OTP for verification
+      allow read: if isAuthenticated() 
+                  && request.auth.token.email == email;
+      
+      // Service account can delete expired OTPs
+      allow delete: if isServiceAccount();
+      
+      // No updates allowed
+      allow update: if false;
     }
 
-    // 🔹 OFFICERS COLLECTION (Read-only contacts, no auth required)
+    // ============================================================
+    // 🔹 OFFICERS COLLECTION (Read by authenticated users)
+    // ============================================================
     match /officers/{officerId} {
-      // Allow anyone to read officers (read-only contacts, no login needed)
-      allow read: if true;
-      
-      // Only admins can write (for sync from Google Sheets via Apps Script)
-      allow create, update, delete: if isAdmin();
-      
-      // Allow Apps Script (unauthenticated) to write officers during sync
-      allow create, update: if request.auth == null
-                            && request.resource.data.keys().hasAll(['agid', 'name']);
+      // Authenticated users can read officers
+      allow read: if isAuthenticated();
+
+      // Admins can create/update/delete
+      allow create, update, delete: if isAdmin()
+                                     && request.resource.data.keys().hasAll(['agid', 'name']);
+
+      // Service account (Apps Script) can create/update during sync
+      // Restricted to specific fields only (no sensitive data)
+      allow create, update: if isServiceAccount()
+                            && request.resource.data.keys().hasAll(['agid', 'name'])
+                            && !request.resource.data.keys().hasAny(['isAdmin', 'email', 'pin', 'firebaseUid']);
     }
 
-    // 🔹 EMPLOYEES COLLECTION
+    // ============================================================
+    // 🔹 EMPLOYEES COLLECTION (Keyed by kgid, not UID)
+    // ============================================================
     match /employees/{employeeId} {
+      // Require authentication for reads
+      allow read: if isAuthenticated();
 
-      // Require authentication for reads (directory not public)
-      allow read: if request.auth != null;
-
-      // 🔹 Employee can update their own record (except protected fields)
-      allow update: if request.auth != null
+      // Employee can update their own record (by matching firebaseUid)
+      // Cannot modify protected fields
+      allow update: if isAuthenticated()
                     && request.auth.uid == resource.data.firebaseUid
-                    && !(request.resource.data.keys().hasAny(['email', 'kgid']))
-                    && !isAdmin();
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                         .hasAny(['email', 'kgid', 'isAdmin', 'pin', 'firebaseUid']);
 
-      // 🔹 Apps Script (unauthenticated) can update ONLY photoUrl
+      // Service account (Apps Script) can ONLY update photoUrl
+      // This is for image uploads from Apps Script
+      allow update: if isServiceAccount()
+                    && request.resource.data.keys().hasOnly(['photoUrl'])
+                    && request.resource.data.photoUrl is string
+                    && request.resource.data.photoUrl.size() > 0
+                    && request.resource.data.photoUrl.size() < 1000;
+
+      // ⚠️ SECURITY: Unauthenticated Apps Script writes (legacy support)
+      // Only allow photoUrl updates, nothing else
       allow update: if request.auth == null
-                    && request.resource.data.keys().hasOnly(['photoUrl']);
+                    && request.resource.data.keys().hasOnly(['photoUrl'])
+                    && request.resource.data.photoUrl is string
+                    && request.resource.data.photoUrl.size() > 0
+                    && request.resource.data.photoUrl.size() < 1000;
 
-      // Admin full access
-      allow create, update, delete: if isAdmin();
+      // Admin full access (with validation)
+      allow create, update, delete: if isAdmin()
+                                    && (request.resource == null || 
+                                        (request.resource.data.keys().hasAll(['name', 'email', 'kgid'])));
     }
 
-    // 🔹 ADMINS COLLECTION
-    match /admins/{adminId} {
-      allow get, list: if request.auth != null;
-      allow write: if isAdmin();
+    // ============================================================
+    // 🔹 ADMINS COLLECTION (Keyed by email, not UID)
+    // ============================================================
+    match /admins/{adminEmail} {
+      // Only admins can read admin list
+      allow get, list: if isAdmin();
+      
+      // Only existing admins can add new admins (prevent privilege escalation)
+      allow create: if isAdmin()
+                    && isValidEmail(adminEmail)
+                    && request.resource.data.keys().hasAll(['isActive', 'email'])
+                    && request.resource.data.isActive is bool
+                    && isValidEmail(request.resource.data.email);
+      
+      // Only admins can update (cannot deactivate themselves)
+      allow update: if isAdmin()
+                    && adminEmail != request.auth.token.email;
+      
+      // Only admins can delete (cannot delete themselves)
+      allow delete: if isAdmin()
+                    && adminEmail != request.auth.token.email;
     }
 
-    // 🔹 META COLLECTION
+    // ============================================================
+    // 🔹 META COLLECTION (Admin Only)
+    // ============================================================
     match /meta/{document=**} {
-      allow get: if request.auth != null;
+      allow get: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // 🔹 PENDING REGISTRATIONS
+    // ============================================================
+    // 🔹 PENDING REGISTRATIONS (Validated)
+    // ============================================================
     match /pending_registrations/{docId} {
+      // Anyone can create registration with required fields
       allow create: if request.resource.data.keys().hasAll(
-        ['kgid','email','name','mobile1','rank','district','station','pin']
-      );
+                      ['kgid','email','name','mobile1','rank','district','station','pin'])
+                    && isValidEmail(request.resource.data.email)
+                    && request.resource.data.kgid is string
+                    && request.resource.data.kgid.size() > 0;
+      
+      // Only admins can read/update/delete
       allow read, update, delete: if isAdmin();
     }
 
-    // 🔹 ADMIN NOTIFICATIONS
+    // ============================================================
+    // 🔹 ADMIN NOTIFICATIONS (Rate Limited)
+    // ============================================================
     match /admin_notifications/{docId} {
-      allow create: if true;
+      // Service account or admins can create notifications
+      allow create: if (isAdmin() || isServiceAccount())
+                    && request.resource.data.keys().hasAll(['title', 'message', 'timestamp'])
+                    && request.resource.data.timestamp is number;
+      
+      // Only admins can read/update/delete
       allow read, update, delete: if isAdmin();
     }
 
-    // 🔹 PUSH NOTIFICATION QUEUE
+    // ============================================================
+    // 🔹 PUSH NOTIFICATION QUEUE (Authenticated Only)
+    // ============================================================
     match /notifications_queue/{docId} {
-      allow create: if request.auth != null;
-      allow read, update, delete: if isAdmin();
+      // Authenticated users can create notification requests
+      allow create: if isAuthenticated()
+                    && request.resource.data.keys().hasAll(['title', 'message', 'target'])
+                    && request.resource.data.title is string;
+      
+      // Only admins or service account can read/update/delete
+      allow read, update, delete: if isAdmin() || isServiceAccount();
     }
 
-    // 🔹 USEFUL LINKS COLLECTION
+    // ============================================================
+    // 🔹 USEFUL LINKS COLLECTION (Public Read, Admin Write)
+    // ============================================================
     match /useful_links/{linkId} {
+      // Public read access
       allow read: if true;
 
       // App writes: only authenticated admins
       allow create, update, delete: if isAdmin();
 
-      // Apps Script sync (unauthenticated)
+      // Service account (Apps Script) can sync links
+      // Restricted to specific fields only
+      allow create, update: if isServiceAccount()
+                            && request.resource.data.keys().hasAll(['name', 'playStoreUrl'])
+                            && request.resource.data.name is string
+                            && !request.resource.data.keys().hasAny(['isAdmin', 'email']);
+
+      // ⚠️ SECURITY: Legacy unauthenticated Apps Script support
+      // Only allow specific fields, no sensitive data
       allow create, update: if request.auth == null
-                            && request.resource.data.keys().hasAll([
-                              'name',
-                              'playStoreUrl',
-                              'apkUrl',
-                              'iconUrl'
-                            ]);
-      allow delete: if request.auth == null;
+                            && request.resource.data.keys().hasAll(['name', 'playStoreUrl'])
+                            && !request.resource.data.keys().hasAny(['isAdmin', 'email']);
+      
+      allow delete: if request.auth == null && isAdmin();
     }
 
-    // 🔹 GALLERY COLLECTION (Public Read, Admin/Apps Script Write)
+    // ============================================================
+    // 🔹 GALLERY COLLECTION (Public Read, Admin Write)
+    // ============================================================
     match /gallery/{imageId} {
-      allow read: if true; // Public read access for all gallery images
+      // Public read access
+      allow read: if true;
 
-      // Admin can create, update, delete gallery images
+      // Admin can create, update, delete
       allow create, update, delete: if isAdmin();
 
-      // Apps Script can create/update gallery images (unauthenticated)
+      // Service account (Apps Script) can create/update
+      allow create, update: if isServiceAccount()
+                            && request.resource.data.keys().hasAll(['imageUrl'])
+                            && request.resource.data.imageUrl is string
+                            && request.resource.data.imageUrl.size() > 0
+                            && request.resource.data.imageUrl.size() < 1000;
+
+      // ⚠️ SECURITY: Legacy unauthenticated Apps Script support
+      // Only allow imageUrl updates, nothing else
       allow create, update: if request.auth == null
-                            && request.resource.data.keys().hasAll(['imageUrl']);
+                            && request.resource.data.keys().hasAll(['imageUrl'])
+                            && request.resource.data.imageUrl is string
+                            && request.resource.data.imageUrl.size() > 0
+                            && request.resource.data.imageUrl.size() < 1000;
     }
 
-    // ------------ ADMIN CHECK ------------
-    function isAdmin() {
-      return request.auth != null
-          && request.auth.token.email in [
-              "ravipolice@gmail.com",
-              "noreply.policemobiledirectory@gmail.com"
-          ];
+    // ============================================================
+    // 🔹 DOCUMENTS COLLECTION (Admin Only Writes)
+    // ============================================================
+    match /documents/{documentId} {
+      // Authenticated users can read
+      allow read: if isAuthenticated();
+      
+      // Only admins can write
+      allow create, update, delete: if isAdmin();
     }
   }
 }

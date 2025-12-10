@@ -6,14 +6,25 @@ import retrofit2.http.*
 interface DocumentsApiService {
 
     @GET("exec?action=getDocuments")
-    suspend fun getDocuments(): List<Document>
+    suspend fun getDocumentsRaw(
+        @Query("token") token: String? = null
+    ): retrofit2.Response<okhttp3.ResponseBody>
 
     @POST("exec?action=uploadDocument")
-    suspend fun uploadDocument(@Body request: DocumentUploadRequest): ApiResponse
+    suspend fun uploadDocument(
+        @Query("token") token: String? = null,
+        @Body request: DocumentUploadRequest
+    ): ApiResponse
 
     @POST("exec?action=editDocument")
-    suspend fun editDocument(@Body request: DocumentEditRequest): ApiResponse
+    suspend fun editDocument(
+        @Query("token") token: String? = null,
+        @Body request: DocumentEditRequest
+    ): ApiResponse
 
     @POST("exec?action=deleteDocument")
-    suspend fun deleteDocument(@Body request: DocumentDeleteRequest): ApiResponse
+    suspend fun deleteDocument(
+        @Query("token") token: String? = null,
+        @Body request: DocumentDeleteRequest
+    ): ApiResponse
 }

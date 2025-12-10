@@ -23,15 +23,26 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.BackHandler
 import androidx.navigation.NavController
 import com.example.policemobiledirectory.R
 import com.example.policemobiledirectory.BuildConfig
+import com.example.policemobiledirectory.navigation.Routes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(navController: NavController) {
     val context = LocalContext.current
     val versionName = BuildConfig.VERSION_NAME
+
+    // Handle back button to navigate to home screen
+    BackHandler {
+        // Navigate to home screen, clearing back stack up to (but not including) EMPLOYEE_LIST
+        navController.navigate(Routes.EMPLOYEE_LIST) {
+            popUpTo(Routes.EMPLOYEE_LIST) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
 
     Scaffold(
         topBar = {

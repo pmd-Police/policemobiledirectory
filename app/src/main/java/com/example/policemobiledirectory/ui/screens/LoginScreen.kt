@@ -122,19 +122,33 @@ fun LoginScreen(
     if (showRegisterDialog && emailToRegister != null) {
         AlertDialog(
             onDismissRequest = { showRegisterDialog = false },
-            title = { Text("User Not Found") },
+            title = { Text("Account Not Registered") },
             text = {
-                Text(
-                    "This Google account (${emailToRegister}) is not registered.\n" +
-                            "Would you like to register now?"
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "The Google account below isn’t registered. You can register it now or choose another account.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Surface(
+                        tonalElevation = 1.dp,
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = emailToRegister ?: "",
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
                     showRegisterDialog = false
                     onRegisterNewUser(emailToRegister!!)
                 }) {
-                    Text("Yes, Register")
+                    Text("Register")
                 }
             },
             dismissButton = {
@@ -142,11 +156,11 @@ fun LoginScreen(
                     showRegisterDialog = false
                     Toast.makeText(
                         context,
-                        "Please log in with a registered account.",
+                        "Please sign in with a registered account.",
                         Toast.LENGTH_SHORT
                     ).show()
                 }) {
-                    Text("No")
+                    Text("Use another account")
                 }
             }
         )

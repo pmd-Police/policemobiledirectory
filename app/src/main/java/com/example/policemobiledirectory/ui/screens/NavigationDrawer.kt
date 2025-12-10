@@ -23,7 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -154,38 +156,53 @@ fun NavigationDrawer(
 
                     Spacer(modifier = Modifier.height(10.dp))
                     
-                    // Name with Rank
+                    // Name (bold, prominent) + rank (smaller, no brackets)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = currentUser?.name ?: "",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        )
+                        currentUser?.displayRank?.takeIf { it.isNotBlank() }?.let { rank ->
+                            Text(
+                                text = rank,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    fontSize = 13.sp
+                                )
+                            )
+                        }
+                    }
+                    
+                    // KGID (larger)
                     Text(
-                        text = buildString {
-                            append(currentUser?.name ?: "")
-                            currentUser?.displayRank?.takeIf { it.isNotBlank() }?.let { rank ->
-                                append(" ($rank)")
-                            }
-                        },
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                        text = currentUser?.kgid?.let { "KGID: $it" } ?: "",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = Color.White.copy(alpha = 0.95f),
+                            fontSize = 16.sp
                         )
                     )
                     
-                    // KGID
-                    Text(
-                        text = currentUser?.kgid?.let { "KGID: $it" } ?: "",
-                        style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.9f))
-                    )
-                    
-                    // Station below KGID
+                    // Station (larger)
                     currentUser?.station?.takeIf { it.isNotBlank() }?.let { station ->
                         Text(
                             text = station,
-                            style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.9f))
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 16.sp
+                            )
                         )
                     }
                     
-                    // Email
+                    // Email (larger)
                     Text(
                         text = currentUser?.email ?: "",
-                        style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.8f))
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 16.sp
+                        )
                     )
                 }
             }
@@ -207,7 +224,11 @@ fun NavigationDrawer(
                     onClick = {
                         scope.launch {
                             drawerState.close()
-                            navController.navigate(Routes.MY_PROFILE)
+                            navController.navigate(Routes.MY_PROFILE) {
+                                launchSingleTop = true
+                                restoreState = true
+                                popUpTo(Routes.EMPLOYEE_LIST) { inclusive = false }
+                            }
                         }
                     }
                 )
@@ -241,7 +262,11 @@ fun NavigationDrawer(
                     onClick = {
                         scope.launch {
                             drawerState.close()
-                            navController.navigate(Routes.NUDI_CONVERTER)
+                            navController.navigate(Routes.NUDI_CONVERTER) {
+                                launchSingleTop = true
+                                restoreState = true
+                                popUpTo(Routes.EMPLOYEE_LIST) { inclusive = false }
+                            }
                         }
                     }
                 )
@@ -253,7 +278,11 @@ fun NavigationDrawer(
                     onClick = {
                         scope.launch {
                             drawerState.close()
-                            navController.navigate(Routes.ABOUT)
+                            navController.navigate(Routes.ABOUT) {
+                                launchSingleTop = true
+                                restoreState = true
+                                popUpTo(Routes.EMPLOYEE_LIST) { inclusive = false }
+                            }
                         }
                     }
                 )
@@ -267,6 +296,8 @@ fun NavigationDrawer(
             Column(modifier = Modifier.padding(16.dp)) {
                 var showLogoutDialog by remember { mutableStateOf(false) }
                 var isLoggingOut by remember { mutableStateOf(false) }
+                var showSupportDialog by remember { mutableStateOf(false) }
+                val clipboardManager = LocalClipboardManager.current
 
                 if (showLogoutDialog) {
                     AlertDialog(
@@ -295,7 +326,7 @@ fun NavigationDrawer(
                                         strokeWidth = 2.dp
                                     )
                                 } else {
-                                    Text("Logout")
+                                    Text("Logout", color = Color.Red)
                                 }
                             }
                         },
@@ -311,9 +342,45 @@ fun NavigationDrawer(
                     )
                 }
 
+                if (showSupportDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showSupportDialog = false },
+                        icon = { Icon(Icons.Default.Email, contentDescription = null) },
+                        title = { Text("Contact Support") },
+                        text = { Text("Email: noreply.policemobiledirectory@gmail.com\nWe usually respond quickly.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("mailto:noreply.policemobiledirectory@gmail.com")
+                                    putExtra(Intent.EXTRA_SUBJECT, "App Support Request")
+                                }
+                                try {
+                                    context.startActivity(emailIntent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "No email app found", Toast.LENGTH_SHORT).show()
+                                }
+                                showSupportDialog = false
+                            }) {
+                                Text("Email")
+                            }
+                        },
+                        dismissButton = {
+                            Row {
+                                TextButton(onClick = {
+                                    clipboardManager.setText(AnnotatedString("noreply.policemobiledirectory@gmail.com"))
+                                    Toast.makeText(context, "Email copied", Toast.LENGTH_SHORT).show()
+                                }) { Text("Copy") }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                TextButton(onClick = { showSupportDialog = false }) { Text("Close") }
+                            }
+                        }
+                    )
+                }
+
                 DrawerItem(
                     icon = Icons.AutoMirrored.Filled.Logout,
                     text = "Logout",
+                    textColor = Color.Red,
                     onClick = { showLogoutDialog = true }
                 )
 
@@ -322,17 +389,7 @@ fun NavigationDrawer(
                 DrawerItem(
                     icon = Icons.Default.Email,
                     text = "Contact Support",
-                    onClick = {
-                        val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
-                            data = Uri.parse("mailto:noreply.policemobiledirectory@gmail.com")
-                            putExtra(Intent.EXTRA_SUBJECT, "App Support Request")
-                        }
-                        try {
-                            context.startActivity(emailIntent)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "No email app found", Toast.LENGTH_SHORT).show()
-                        }
-                    }
+                    onClick = { showSupportDialog = true }
                 )
             }
         }
@@ -347,6 +404,7 @@ fun DrawerItem(
     icon: ImageVector,
     text: String,
     selected: Boolean = false,
+    textColor: Color = MaterialTheme.colorScheme.onSurface,
     onClick: () -> Unit
 ) {
     val containerColor = if (selected)
@@ -371,7 +429,7 @@ fun DrawerItem(
         Text(
             text = text,
             style = MaterialTheme.typography.bodyLarge.copy(
-                color = MaterialTheme.colorScheme.onSurface
+                color = textColor
             )
         )
     }

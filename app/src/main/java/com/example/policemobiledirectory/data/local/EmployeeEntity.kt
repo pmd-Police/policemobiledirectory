@@ -1,10 +1,23 @@
 package com.example.policemobiledirectory.data.local
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.Date
 
-@Entity(tableName = "employees")
+@Entity(
+    tableName = "employees",
+    indices = [
+        Index(value = ["email"], unique = true),
+        Index(value = ["name"]),
+        Index(value = ["station"]),
+        Index(value = ["district"]),
+        Index(value = ["rank"]),
+        Index(value = ["mobile1"]),
+        Index(value = ["mobile2"]),
+        Index(value = ["metalNumber"])
+    ]
+)
 data class EmployeeEntity(
     @PrimaryKey
     val kgid: String = "",

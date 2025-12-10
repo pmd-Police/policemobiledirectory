@@ -192,3 +192,4 @@ GET https://your-deployment-url/exec?action=pushDataToFirebase
 Both files are **fully functional** and **ready to deploy**! 🚀
 
 
+

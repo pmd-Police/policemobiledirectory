@@ -38,11 +38,14 @@ interface GDriveUploadService {
 }
 
 /**
- * ✅ Base64 JSON request body
+ * ✅ Base64 JSON request body with security token
  */
 data class Base64UploadRequest(
     val image: String, // data:image/jpeg;base64,...
-    val filename: String // e.g., "98765.jpg"
+    val filename: String, // e.g., "98765.jpg"
+    val token: String? = null, // Secret token for authentication
+    val kgid: String? = null, // User's KGID for ownership verification
+    val userEmail: String? = null // User's email for rate limiting
 )
 
 /**

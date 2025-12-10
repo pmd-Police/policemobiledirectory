@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PendingRegistrationEntity::class,
         AppIconEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -67,6 +67,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // ✅ Migration 5 → 6: Add indexes for better query performance
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                try {
+                    // Create indexes for frequently queried columns
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_employees_email ON employees(email)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_employees_name ON employees(name)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_employees_station ON employees(station)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_employees_district ON employees(district)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_employees_rank ON employees(rank)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_employees_mobile1 ON employees(mobile1)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_employees_mobile2 ON employees(mobile2)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_employees_metalNumber ON employees(metalNumber)")
+                } catch (e: Exception) {
+                    // Indexes might already exist, ignore
+                }
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -74,7 +93,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "employee_directory_db"
                 )
-                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5) // ✅ Keep user data on update
+                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6) // ✅ Keep user data on update
                     .build()
                 INSTANCE = instance
                 instance

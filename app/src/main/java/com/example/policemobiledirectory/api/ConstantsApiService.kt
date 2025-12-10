@@ -1,9 +1,8 @@
 package com.example.policemobiledirectory.api
 
 import retrofit2.Response
-import retrofit2.http.Body
 import retrofit2.http.GET
-import retrofit2.http.POST
+import retrofit2.http.Query
 
 /**
  * Data class matching PRD format:
@@ -37,5 +36,7 @@ interface ConstantsApiService {
 
     // 🔹 Fetch constants (GET) - matches PRD format
     @GET("exec")
-    suspend fun getConstants(): ConstantsApiResponse
+    suspend fun getConstants(
+        @Query("token") token: String? = null
+    ): ConstantsApiResponse
 }

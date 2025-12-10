@@ -20,6 +20,7 @@ import com.example.policemobiledirectory.data.local.PendingRegistrationEntity
 import com.example.policemobiledirectory.data.local.SearchFilter
 import com.example.policemobiledirectory.utils.PinHasher
 import com.example.policemobiledirectory.api.EmployeeApiService
+import com.example.policemobiledirectory.utils.SecurityConfig
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
@@ -45,7 +46,8 @@ open class EmployeeRepository @Inject constructor(
     private val apiService: EmployeeApiService,
     private val storage: FirebaseStorage,
     private val functions: FirebaseFunctions,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val securityConfig: SecurityConfig
 ) {
     private val TAG = "EmployeeRepository"
     private val employeesCollection = firestore.collection("employees")
@@ -228,7 +230,10 @@ open class EmployeeRepository @Inject constructor(
     suspend fun deleteEmployee(kgid: String, photoUrl: String?) = withContext(ioDispatcher) {
         try {
             // ✅ 1️⃣ Delete from Google Sheet (via Apps Script API)
-            apiService.deleteEmployee(kgid)
+            apiService.deleteEmployee(
+                token = securityConfig.getSecretToken(),
+                kgid = kgid
+            )
 
             // ✅ 2️⃣ Delete from Firestore
             firestore.collection("employees").document(kgid).delete().await()
@@ -251,7 +256,10 @@ open class EmployeeRepository @Inject constructor(
     suspend fun deleteImageFromDrive(fileId: String) {
         try {
             // ✅ FIX: Replaced khttp with a call to the Retrofit apiService
-            val response = apiService.deleteImageFromDrive(fileId)
+            val response = apiService.deleteImageFromDrive(
+                token = securityConfig.getSecretToken(),
+                fileId = fileId
+            )
             if (response.isSuccessful) {
                 Log.d(TAG, "deleteImageFromDrive: Successfully deleted image with fileId: $fileId")
             } else {
@@ -474,7 +482,10 @@ open class EmployeeRepository @Inject constructor(
             
             // Delete from Google Sheet if API is available
             try {
-                apiService.deleteEmployee(kgid)
+                apiService.deleteEmployee(
+                    token = securityConfig.getSecretToken(),
+                    kgid = kgid
+                )
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to delete from Google Sheet: ${e.message}")
             }

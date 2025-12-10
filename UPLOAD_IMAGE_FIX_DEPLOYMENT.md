@@ -82,3 +82,4 @@ https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?action=uploadImage
 - Debug information is included in responses to help troubleshoot issues
 
 
+

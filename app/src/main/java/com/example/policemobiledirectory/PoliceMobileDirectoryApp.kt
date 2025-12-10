@@ -18,6 +18,31 @@ class PoliceMobileDirectoryApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        
+        // 🔐 Verify app signature to prevent tampering (after Hilt injection)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Wait for Hilt to inject dependencies
+                kotlinx.coroutines.delay(1000)
+                
+                // Get signature verifier via manual injection (since we can't inject in Application onCreate)
+                val signatureVerifier = com.example.policemobiledirectory.utils.AppSignatureVerifier(
+                    applicationContext,
+                    com.example.policemobiledirectory.utils.SecurityConfig(applicationContext)
+                )
+                
+                if (!signatureVerifier.verifySignature()) {
+                    Log.e("AppInit", "⚠️ WARNING: App signature verification failed!")
+                    // In production, you may want to block app usage or show warning
+                    // For now, we log the warning and continue
+                } else {
+                    Log.d("AppInit", "✅ App signature verified")
+                }
+            } catch (e: Exception) {
+                Log.e("AppInit", "Signature verification error", e)
+                // Continue app startup even if verification fails (for development)
+            }
+        }
 
         // Initialize PDFBox resources (loads glyphlist, fonts, etc.)
         try {

@@ -6,10 +6,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.policemobiledirectory.model.Employee
+import com.example.policemobiledirectory.navigation.Routes
 import com.example.policemobiledirectory.repository.RepoResult
 import com.example.policemobiledirectory.ui.components.CommonEmployeeForm
 import com.example.policemobiledirectory.viewmodel.AddEditEmployeeViewModel
@@ -27,6 +29,15 @@ fun MyProfileEditScreen(
     val photoUploadStatus by addEditViewModel.photoUploadStatus.collectAsState()
     val isLoading = saveStatus is com.example.policemobiledirectory.repository.RepoResult.Loading || 
                     photoUploadStatus is com.example.policemobiledirectory.utils.OperationStatus.Loading
+
+    // Handle back button to navigate to home screen
+    BackHandler(enabled = navController != null) {
+        // Navigate to home screen, clearing back stack up to (but not including) EMPLOYEE_LIST
+        navController?.navigate(Routes.EMPLOYEE_LIST) {
+            popUpTo(Routes.EMPLOYEE_LIST) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
 
     // Show feedback messages
     LaunchedEffect(saveStatus) {

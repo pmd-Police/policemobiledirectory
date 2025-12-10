@@ -61,3 +61,4 @@ https://script.google.com/macros/s/AKfycbyEqYeeUGeToFPwhdTD2xs7uEWOzlwIjYm1f41KJ
 The deployment is confirmed working (returns JSON), so the upload should work now! 🚀
 
 
+

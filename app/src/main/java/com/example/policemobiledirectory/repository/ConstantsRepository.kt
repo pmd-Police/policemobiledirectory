@@ -6,6 +6,7 @@ import android.widget.Toast
 import com.example.policemobiledirectory.utils.Constants
 import com.example.policemobiledirectory.api.ConstantsApiService
 import com.example.policemobiledirectory.api.ConstantsData
+import com.example.policemobiledirectory.utils.SecurityConfig
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,7 +28,8 @@ import java.util.concurrent.TimeUnit
 @Singleton
 class ConstantsRepository @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val apiService: ConstantsApiService
+    private val apiService: ConstantsApiService,
+    private val securityConfig: SecurityConfig
 ) {
 
     private val prefs = context.getSharedPreferences("constants_cache", Context.MODE_PRIVATE)
@@ -67,7 +69,7 @@ class ConstantsRepository @Inject constructor(
      */
     suspend fun refreshConstants(): Boolean = withContext(Dispatchers.IO) {
         try {
-            val response = apiService.getConstants()
+            val response = apiService.getConstants(token = securityConfig.getSecretToken())
             
             if (response.success && response.data != null) {
                 // Check version
@@ -110,7 +112,7 @@ class ConstantsRepository @Inject constructor(
      */
     suspend fun fetchConstants(): ConstantsData? = withContext(Dispatchers.IO) {
         try {
-            val response = apiService.getConstants()
+            val response = apiService.getConstants(token = securityConfig.getSecretToken())
             
             if (response.success && response.data != null) {
                 val serverVersion = response.data.version

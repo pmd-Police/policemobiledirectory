@@ -50,12 +50,14 @@ fun SplashVideoScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0D47A1)) // dark blue background
+            .background(Color(0xFF0A0A3C)) // very dark navy blue background
     ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = {
                 videoView.apply {
+                    // Play locally bundled splash video for instant start
+                    // Place the video file as res/raw/splash_intro.mp4 (download from the provided Drive link)
                     setVideoURI(
                         Uri.parse("android.resource://${context.packageName}/${R.raw.splash_intro}")
                     )

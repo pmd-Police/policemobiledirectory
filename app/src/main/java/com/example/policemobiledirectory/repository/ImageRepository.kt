@@ -10,11 +10,13 @@ import com.example.policemobiledirectory.data.remote.*
 import com.example.policemobiledirectory.utils.OperationStatus
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -37,8 +39,12 @@ import kotlin.math.roundToInt
  * 3️⃣ Deleting officer images from Drive when employee is removed
  */
 class ImageRepository(
-    private val context: Context
+    private val context: Context,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
+
+    // Security helper for Apps Script auth token
+    private val securityConfig = com.example.policemobiledirectory.utils.SecurityConfig(context)
 
     // ⚙️ Retrofit setup — your deployed Apps Script base URL (no action params here)
     private val gson = GsonBuilder()
@@ -113,7 +119,7 @@ class ImageRepository(
             null
         }
 
-        tempFile = copyAndCompressImage(context, uri)
+        tempFile = withContext(ioDispatcher) { copyAndCompressImage(context, uri) }
         if (tempFile == null || !tempFile.exists()) {
             Log.e("ImageRepository", "❌ Failed to prepare temp file for upload")
             emit(OperationStatus.Error("Failed to process selected image"))
@@ -130,7 +136,10 @@ class ImageRepository(
             val base64Image = "data:image/jpeg;base64,$base64String"
             val jsonBody = Base64UploadRequest(
                 image = base64Image,
-                filename = "$userId.jpg"
+                filename = "$userId.jpg",
+                token = securityConfig.getSecretToken(),
+                kgid = userId,
+                userEmail = null // populated when available
             )
             Log.d("ImageRepository", "✅ Base64 prepared, size: ${base64String.length} chars")
 
@@ -315,6 +324,9 @@ private fun copyAndCompressImage(
             // Fallback: copy as-is
             resolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+            } ?: run {
+                tempFile.delete()
+                throw IllegalStateException("Unable to open input stream")
             }
             return tempFile
         }
@@ -328,7 +340,7 @@ private fun copyAndCompressImage(
             BitmapFactory.decodeStream(it, null, decodeOptions)
         } ?: run {
             tempFile.delete()
-            return null
+            throw IllegalStateException("Unable to decode image stream")
         }
 
         val needsScaling = decodedBitmap.width > maxDimension || decodedBitmap.height > maxDimension

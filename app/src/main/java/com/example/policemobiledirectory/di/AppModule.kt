@@ -22,10 +22,17 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineDispatcher
 import javax.inject.Singleton
 import com.example.policemobiledirectory.di.IoDispatcher
+import com.example.policemobiledirectory.utils.SecurityConfig
 
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+
+    @Provides
+    @Singleton
+    fun provideSecurityConfig(
+        @ApplicationContext context: Context
+    ): SecurityConfig = SecurityConfig(context)
 
     @Provides
     @Singleton
@@ -36,7 +43,8 @@ object AppModule {
         apiService: EmployeeApiService,
         storage: FirebaseStorage,
         functions: FirebaseFunctions,
-        @IoDispatcher ioDispatcher: CoroutineDispatcher
+        @IoDispatcher ioDispatcher: CoroutineDispatcher,
+        securityConfig: SecurityConfig
     ): EmployeeRepository = EmployeeRepository(
         auth = auth,
         employeeDao = employeeDao,
@@ -44,7 +52,8 @@ object AppModule {
         apiService = apiService,
         storage = storage,
         functions = functions,
-        ioDispatcher = ioDispatcher
+        ioDispatcher = ioDispatcher,
+        securityConfig = securityConfig
     )
 
     @Provides
@@ -67,8 +76,9 @@ object AppModule {
     @Singleton
     fun provideConstantsRepository(
         @ApplicationContext context: Context,
-        apiService: ConstantsApiService
-    ): ConstantsRepository = ConstantsRepository(context, apiService)
+        apiService: ConstantsApiService,
+        securityConfig: SecurityConfig
+    ): ConstantsRepository = ConstantsRepository(context, apiService, securityConfig)
 
     @Provides
     @Singleton

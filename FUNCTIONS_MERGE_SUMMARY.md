@@ -125,3 +125,4 @@ firebase deploy --only functions
 - The `sendOtpOnCreate` function is the recommended approach for "Forgot PIN" flow (Option A)
 - Legacy `sendOtpEmail` (onCall) is kept for backward compatibility
 
+

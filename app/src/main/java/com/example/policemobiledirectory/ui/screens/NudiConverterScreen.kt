@@ -38,6 +38,8 @@ import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.activity.compose.BackHandler
+import com.example.policemobiledirectory.navigation.Routes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -64,6 +66,15 @@ fun NudiConverterScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
+
+    // Handle back button to navigate to home screen
+    BackHandler {
+        // Navigate to home screen, clearing back stack up to (but not including) EMPLOYEE_LIST
+        navController.navigate(Routes.EMPLOYEE_LIST) {
+            popUpTo(Routes.EMPLOYEE_LIST) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
 
     LaunchedEffect(context) {
         viewModel.attachContext(context)

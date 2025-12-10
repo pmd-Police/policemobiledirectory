@@ -7,7 +7,8 @@ import retrofit2.http.Query
 interface OfficersSyncApiService {
     @GET("exec")
     suspend fun syncOfficersSheetToFirebase(
-        @Query("action") action: String = "syncOfficersSheetToFirebase"
+        @Query("action") action: String = "syncOfficersSheetToFirebase",
+        @Query("token") token: String? = null
     ): ResponseBody
 }
 
